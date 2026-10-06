@@ -12,5 +12,17 @@ __pycache__/
 *.py[cod]
 *$py.class
 
+# Temporary analysis scripts
+check_*.py
+inspect_*.py
+read_*.py
+read_*.ps1
+test_*.py
+filter_*.py
+clean_*.py
+rebuild_*.py
+analyze_*.py
+search_*.py
+
 # Large binary local raw backups (optional)
 # *.xlsb

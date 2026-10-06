@@ -1,10 +1,16 @@
 # -*- coding: utf-8 -*-
 """
-GitHub Pages 배포용 알프레드 혜움 웹 대시보드 생성 스크립트
-- index.html 생성 (다크 네이비 비즈니스 테마, 이모티콘 완전 배제)
-- 브라우저 내 엑셀/텍스트 파싱 및 실시간 연산 엔진 내장
-- 엑셀 붙여넣기(Ctrl+V) 및 파일 드래그 앤 드롭 모달
-- IndexedDB 로컬 영구 저장 지원
+GitHub Pages 배포용 알프레드 혜움 웹 대시보드 v3 생성 스크립트
+신규 탑재 기능:
+1. 테이블 컬럼별 오름차순/내림차순 정렬 (Sorting Engine)
+2. 매체별 상세 분석 내:
+   - 캠페인 및 그룹 필터 & 랭킹 테이블 내 캠페인/그룹 표시 (인덱스 계층 매칭)
+   - 매체별 주차별 추이 테이블 (W36~W40)
+   - 매체별 전체 일별 추이 테이블
+   - 키워드/소재별 일별 드릴다운
+3. '데이터 내보내기' -> 화면에 보이는 모든 리포트를 다중 시트 엑셀(.xlsx) 파일로 원클릭 다운로드
+4. 키워드 최우선(Keyword-First) + META/GFA 소재 매칭 내장
+5. 이모티콘 0건 원칙, 다크 네이비 UI/UX 비즈니스 테마 100% 준수
 """
 
 import sys
@@ -55,17 +61,19 @@ html_content = """<!DOCTYPE html>
     .btn-primary:hover { background-color: var(--primary-navy); }
     .btn-accent { background-color: #0078D4; color: #FFFFFF; }
     .btn-accent:hover { background-color: #005A9E; }
+    .btn-excel { background-color: #107C41; color: #FFFFFF; }
+    .btn-excel:hover { background-color: #0B5A2F; }
     .btn-outline { background-color: transparent; border: 1px solid #FFFFFF; color: #FFFFFF; }
     .btn-outline:hover { background-color: rgba(255,255,255,0.1); }
     .btn-sm { padding: 4px 8px; font-size: 11px; }
 
     /* Navigation Tabs */
     nav.nav-tabs { background-color: #FFFFFF; border-bottom: 1px solid var(--border-color); padding: 0 24px; display: flex; gap: 4px; overflow-x: auto; }
-    .tab-btn { padding: 12px 18px; font-size: 13px; font-weight: 600; color: var(--text-muted); border: none; background: transparent; cursor: pointer; border-bottom: 3px solid transparent; transition: all 0.2s; }
+    .tab-btn { padding: 12px 18px; font-size: 13px; font-weight: 600; color: var(--text-muted); border: none; background: transparent; cursor: pointer; border-bottom: 3px solid transparent; transition: all 0.2s; white-space: nowrap; }
     .tab-btn:hover { color: var(--primary-navy); }
     .tab-btn.active { color: var(--primary-navy); border-bottom-color: var(--primary-navy); }
 
-    /* Period Control Bar */
+    /* Control Bar */
     .control-bar { background-color: #FFFFFF; padding: 12px 24px; border-bottom: 1px solid var(--border-color); display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px; }
     .control-group { display: flex; align-items: center; gap: 8px; font-size: 12px; }
     .control-label { font-weight: 700; color: var(--primary-navy); }
@@ -76,7 +84,7 @@ html_content = """<!DOCTYPE html>
     .raw-info-tag { font-size: 11px; color: var(--text-muted); background: #EEF2F6; padding: 4px 10px; border-radius: 4px; border: 1px solid #D5DFE9; }
 
     /* Container */
-    .container { padding: 20px 24px; max-width: 1600px; margin: 0 auto; }
+    .container { padding: 20px 24px; max-width: 1680px; margin: 0 auto; }
     .tab-content { display: none; }
     .tab-content.active { display: block; }
 
@@ -89,14 +97,16 @@ html_content = """<!DOCTYPE html>
 
     /* Section & Tables */
     .section-card { background: var(--card-bg); border: 1px solid var(--border-color); border-radius: 6px; padding: 16px; margin-bottom: 20px; box-shadow: 0 1px 3px rgba(0,0,0,0.04); }
-    .section-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; padding-bottom: 8px; border-bottom: 1px solid #EAEAEA; }
+    .section-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; padding-bottom: 8px; border-bottom: 1px solid #EAEAEA; flex-wrap: wrap; gap: 8px; }
     .section-title { font-size: 13px; font-weight: 700; color: var(--primary-navy); }
     .section-desc { font-size: 11px; color: var(--text-muted); }
 
     .table-container { width: 100%; overflow-x: auto; }
     table.data-table { width: 100%; border-collapse: collapse; font-size: 12px; }
     table.data-table th, table.data-table td { padding: 7px 10px; border: 1px solid var(--border-color); }
-    table.data-table th { background-color: var(--secondary-navy); color: #FFFFFF; font-weight: 600; text-align: center; white-space: nowrap; }
+    table.data-table th { background-color: var(--secondary-navy); color: #FFFFFF; font-weight: 600; text-align: center; white-space: nowrap; user-select: none; }
+    table.data-table th.sortable { cursor: pointer; transition: background 0.15s; }
+    table.data-table th.sortable:hover { background-color: var(--primary-navy); }
     table.data-table th.sub-th { background-color: var(--accent-blue); font-size: 11px; }
     table.data-table td { background-color: #FFFFFF; }
     table.data-table td.center { text-align: center; }
@@ -110,7 +120,7 @@ html_content = """<!DOCTYPE html>
     /* Interactive Drilldown Box */
     .drilldown-box { background: #F8FAFD; border: 1px solid var(--border-accent); border-radius: 6px; padding: 12px; margin-bottom: 16px; display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
     .drilldown-box label { font-weight: 700; color: var(--primary-navy); font-size: 12px; }
-    .drilldown-box input, .drilldown-box select { padding: 6px 10px; border: 1px solid var(--border-accent); border-radius: 4px; font-size: 12px; font-weight: 600; color: var(--primary-navy); min-width: 200px; }
+    .drilldown-box input, .drilldown-box select { padding: 6px 10px; border: 1px solid var(--border-accent); border-radius: 4px; font-size: 12px; font-weight: 600; color: var(--primary-navy); min-width: 180px; }
 
     /* Modal for Raw Upload & Paste */
     .modal-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); display: none; justify-content: center; align-items: center; z-index: 1000; }
@@ -124,8 +134,8 @@ html_content = """<!DOCTYPE html>
     .paste-area { width: 100%; height: 160px; padding: 10px; border: 1px solid var(--border-color); border-radius: 4px; font-family: monospace; font-size: 11px; margin-bottom: 16px; resize: vertical; }
 
     /* Media Sub Tabs */
-    .sub-tabs { display: flex; gap: 4px; margin-bottom: 14px; border-bottom: 1px solid var(--border-color); padding-bottom: 4px; }
-    .sub-tab-btn { padding: 6px 14px; font-size: 12px; font-weight: 600; border: 1px solid var(--border-color); background: #FFFFFF; border-radius: 4px; cursor: pointer; color: var(--text-muted); }
+    .sub-tabs { display: flex; gap: 4px; margin-bottom: 14px; border-bottom: 1px solid var(--border-color); padding-bottom: 4px; overflow-x: auto; }
+    .sub-tab-btn { padding: 6px 14px; font-size: 12px; font-weight: 600; border: 1px solid var(--border-color); background: #FFFFFF; border-radius: 4px; cursor: pointer; color: var(--text-muted); white-space: nowrap; }
     .sub-tab-btn.active { background: var(--secondary-navy); color: #FFFFFF; border-color: var(--secondary-navy); }
 
     /* Chart Container */
@@ -138,10 +148,10 @@ html_content = """<!DOCTYPE html>
   <header>
     <div class="header-title">
       <h1>혜움 세무기장 마케팅 성과 실시간 대시보드</h1>
-      <p>100% 통합 Raw 실시간 자동 연산 엔진 | GitHub Pages 배포 버전</p>
+      <p>100% 통합 Raw 실시간 자동 연산 엔진 | 캠페인-그룹-소재 인덱스 연동 버전</p>
     </div>
     <div class="header-actions">
-      <button class="btn btn-outline" id="btn-export-data">데이터 내보내기</button>
+      <button class="btn btn-excel" id="btn-export-excel">화면 전체 리포트 엑셀 다운로드</button>
       <button class="btn btn-accent" id="btn-open-modal">Raw 데이터 갱신</button>
     </div>
   </header>
@@ -150,10 +160,10 @@ html_content = """<!DOCTYPE html>
   <nav class="nav-tabs">
     <button class="tab-btn active" data-tab="tab-overview">종합 대시보드</button>
     <button class="tab-btn" data-tab="tab-brand">브랜드 키워드 분석</button>
+    <button class="tab-btn" data-tab="tab-media">매체별 상세 분석 (캠페인/그룹/주차/일별)</button>
     <button class="tab-btn" data-tab="tab-daily-kw">일별 키워드 추이</button>
     <button class="tab-btn" data-tab="tab-weekly">주차별 추이 비교</button>
     <button class="tab-btn" data-tab="tab-monthly">월별 추이 비교</button>
-    <button class="tab-btn" data-tab="tab-media">매체별 상세 분석</button>
   </nav>
 
   <!-- Control Bar -->
@@ -180,38 +190,36 @@ html_content = """<!DOCTYPE html>
 
     <!-- TAB 1: 종합 대시보드 -->
     <div id="tab-overview" class="tab-content active">
-      <div class="kpi-grid" id="overview-kpis">
-        <!-- Rendered by JS -->
-      </div>
+      <div class="kpi-grid" id="overview-kpis"></div>
 
       <div class="section-card">
         <div class="section-header">
           <div>
             <div class="section-title">매체별 예산 및 실집행 성과 요약</div>
-            <div class="section-desc">조회 기간 기준 실시간 집계 | 1차/2차 목표 대비 소진율 및 수임 성과</div>
+            <div class="section-desc">조회 기간 기준 실시간 집계 | 헤더 클릭 시 오름차순/내림차순 정렬</div>
           </div>
         </div>
         <div class="table-container">
           <table class="data-table" id="table-overview-media">
             <thead>
               <tr>
-                <th>서비스 구분</th>
-                <th>매체</th>
-                <th>예산(vat-)</th>
-                <th>예산(vat+)</th>
-                <th>비중</th>
-                <th>소진율</th>
-                <th>목표CPA</th>
-                <th>실 CPA</th>
-                <th>노출</th>
-                <th>클릭</th>
-                <th>소진 비용(vat-)</th>
-                <th>CTR</th>
-                <th>CPC</th>
-                <th>총 리드</th>
-                <th>총 리드 CPA</th>
-                <th>수임 biz</th>
-                <th>수임 CPA</th>
+                <th class="sortable" data-col="0">서비스 구분</th>
+                <th class="sortable" data-col="1">매체</th>
+                <th class="sortable" data-col="2">예산(vat-)</th>
+                <th class="sortable" data-col="3">예산(vat+)</th>
+                <th class="sortable" data-col="4">비중</th>
+                <th class="sortable" data-col="5">소진율</th>
+                <th class="sortable" data-col="6">목표CPA</th>
+                <th class="sortable" data-col="7">실 CPA</th>
+                <th class="sortable" data-col="8">노출</th>
+                <th class="sortable" data-col="9">클릭</th>
+                <th class="sortable" data-col="10">소진 비용(vat-)</th>
+                <th class="sortable" data-col="11">CTR</th>
+                <th class="sortable" data-col="12">CPC</th>
+                <th class="sortable" data-col="13">총 리드</th>
+                <th class="sortable" data-col="14">총 리드 CPA</th>
+                <th class="sortable" data-col="15">수임 biz</th>
+                <th class="sortable" data-col="16">수임 CPA</th>
               </tr>
             </thead>
             <tbody></tbody>
@@ -226,28 +234,28 @@ html_content = """<!DOCTYPE html>
         <div class="section-header">
           <div>
             <div class="section-title">혜움 브랜드 및 카테고리별 키워드 성과 상세 분석</div>
-            <div class="section-desc">브랜드 자산군 / 핵심 직무군 / 컨설팅군 / 로컬 타겟군 4대 분류 체계</div>
+            <div class="section-desc">브랜드 자산군 / 핵심 직무군 / 컨설팅군 / 로컬 타겟군 4대 분류 체계 | 헤더 클릭 시 정렬</div>
           </div>
         </div>
         <div class="table-container">
           <table class="data-table" id="table-brand-cat">
             <thead>
               <tr>
-                <th>카테고리 구분</th>
-                <th>키워드</th>
-                <th>대표 매체</th>
-                <th>노출수</th>
-                <th>클릭수</th>
-                <th>비용(vat-)</th>
-                <th>비용(vat+)</th>
-                <th>CTR</th>
-                <th>CPC</th>
-                <th>총 리드</th>
-                <th>유효 리드</th>
-                <th>수임</th>
-                <th>리드 CPA</th>
-                <th>수임 CPA</th>
-                <th>전환율(CVR)</th>
+                <th class="sortable" data-col="0">카테고리 구분</th>
+                <th class="sortable" data-col="1">키워드</th>
+                <th class="sortable" data-col="2">대표 매체</th>
+                <th class="sortable" data-col="3">노출수</th>
+                <th class="sortable" data-col="4">클릭수</th>
+                <th class="sortable" data-col="5">비용(vat-)</th>
+                <th class="sortable" data-col="6">비용(vat+)</th>
+                <th class="sortable" data-col="7">CTR</th>
+                <th class="sortable" data-col="8">CPC</th>
+                <th class="sortable" data-col="9">총 리드</th>
+                <th class="sortable" data-col="10">유효 리드</th>
+                <th class="sortable" data-col="11">수임</th>
+                <th class="sortable" data-col="12">리드 CPA</th>
+                <th class="sortable" data-col="13">수임 CPA</th>
+                <th class="sortable" data-col="14">전환율(CVR)</th>
               </tr>
             </thead>
             <tbody></tbody>
@@ -256,7 +264,165 @@ html_content = """<!DOCTYPE html>
       </div>
     </div>
 
-    <!-- TAB 3: 일별 키워드 추이 -->
+    <!-- TAB 3: 매체별 상세 분석 (전면 강화: 캠페인/그룹 인덱스 + 주차추이 + 전체일별추이 + 소재랭킹) -->
+    <div id="tab-media" class="tab-content">
+      <div class="sub-tabs" id="media-sub-tabs">
+        <button class="sub-tab-btn active" data-media="네이버 검색광고">네이버 검색광고</button>
+        <button class="sub-tab-btn" data-media="구글 검색광고">구글 검색광고</button>
+        <button class="sub-tab-btn" data-media="META">META</button>
+        <button class="sub-tab-btn" data-media="네이버 GFA">네이버 GFA</button>
+        <button class="sub-tab-btn" data-media="네이버 플레이스">네이버 플레이스</button>
+        <button class="sub-tab-btn" data-media="네이버브랜드검색광고">네이버브랜드검색광고</button>
+      </div>
+
+      <div class="kpi-grid" id="media-kpis"></div>
+
+      <!-- 매체별 상단 필터: 캠페인 / 그룹 필터링 -->
+      <div class="drilldown-box">
+        <label>캠페인 필터:</label>
+        <select id="select-media-campaign">
+          <option value="ALL">전체 캠페인</option>
+        </select>
+
+        <label>그룹 필터:</label>
+        <select id="select-media-group">
+          <option value="ALL">전체 그룹</option>
+        </select>
+
+        <label>키워드/소재 검색:</label>
+        <input type="text" id="search-media-kw" placeholder="키워드/소재명 검색">
+      </div>
+
+      <!-- 매체별 주차별 추이 테이블 -->
+      <div class="section-card">
+        <div class="section-header">
+          <div class="section-title"><span id="txt-media-weekly-title">선택 매체</span> 주차별 성과 추이 (W36 ~ W40)</div>
+          <div class="section-desc">해당 매체의 전체 주차별 실적 및 WoW 추이</div>
+        </div>
+        <div class="table-container">
+          <table class="data-table" id="table-media-weekly">
+            <thead>
+              <tr>
+                <th class="sortable" data-col="0">주차 구분</th>
+                <th class="sortable" data-col="1">노출수</th>
+                <th class="sortable" data-col="2">클릭수</th>
+                <th class="sortable" data-col="3">CTR</th>
+                <th class="sortable" data-col="4">CPC</th>
+                <th class="sortable" data-col="5">비용(vat-)</th>
+                <th class="sortable" data-col="6">비용(vat+)</th>
+                <th class="sortable" data-col="7">총 리드</th>
+                <th class="sortable" data-col="8">유효 리드</th>
+                <th class="sortable" data-col="9">수임</th>
+                <th class="sortable" data-col="10">리드 CPA</th>
+                <th class="sortable" data-col="11">수임 CPA</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- 매체별 전체 일별 추이 테이블 -->
+      <div class="section-card">
+        <div class="section-header">
+          <div class="section-title"><span id="txt-media-daily-all-title">선택 매체</span> 전체 일별 성과 추이 캘린더</div>
+          <div class="section-desc">조회 기간 전체 일자별 노출/클릭/비용/리드/수임 성과</div>
+        </div>
+        <div class="table-container">
+          <table class="data-table" id="table-media-daily-all">
+            <thead>
+              <tr>
+                <th class="sortable" data-col="0">일자</th>
+                <th class="sortable" data-col="1">요일</th>
+                <th class="sortable" data-col="2">노출수</th>
+                <th class="sortable" data-col="3">클릭수</th>
+                <th class="sortable" data-col="4">CTR</th>
+                <th class="sortable" data-col="5">CPC</th>
+                <th class="sortable" data-col="6">비용(vat-)</th>
+                <th class="sortable" data-col="7">비용(vat+)</th>
+                <th class="sortable" data-col="8">총 리드</th>
+                <th class="sortable" data-col="9">유효 리드</th>
+                <th class="sortable" data-col="10">수임</th>
+                <th class="sortable" data-col="11">리드 CPA</th>
+                <th class="sortable" data-col="12">수임 CPA</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- 매체별 키워드/소재 랭킹 테이블 (캠페인, 그룹 포함) -->
+      <div class="section-card">
+        <div class="section-header">
+          <div>
+            <div class="section-title"><span id="txt-media-ranking-title">선택 매체</span> 캠페인 / 그룹 / 키워드소재 성과 랭킹</div>
+            <div class="section-desc">키워드 우선 매칭 & META/GFA 소재 매핑 완비 | 헤더 클릭 시 오름차순/내림차순 정렬</div>
+          </div>
+        </div>
+        <div class="table-container">
+          <table class="data-table" id="table-media-ranking">
+            <thead>
+              <tr>
+                <th class="sortable" data-col="0">순위</th>
+                <th class="sortable" data-col="1">캠페인</th>
+                <th class="sortable" data-col="2">그룹</th>
+                <th class="sortable" data-col="3">키워드 / 소재명</th>
+                <th class="sortable" data-col="4">노출수</th>
+                <th class="sortable" data-col="5">클릭수</th>
+                <th class="sortable" data-col="6">비용(vat-)</th>
+                <th class="sortable" data-col="7">비용(vat+)</th>
+                <th class="sortable" data-col="8">CTR</th>
+                <th class="sortable" data-col="9">CPC</th>
+                <th class="sortable" data-col="10">총 리드</th>
+                <th class="sortable" data-col="11">유효 리드</th>
+                <th class="sortable" data-col="12">수임</th>
+                <th class="sortable" data-col="13">리드 CPA</th>
+                <th class="sortable" data-col="14">수임 CPA</th>
+                <th class="sortable" data-col="15">전환율</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- 특정 키워드/소재 일별 드릴다운 -->
+      <div class="section-card">
+        <div class="section-header">
+          <div class="section-title">특정 키워드/소재 일별 성과 추이 드릴다운</div>
+          <div class="section-desc">아래 입력창에 분석할 키워드/소재명을 입력하면 최근 일별 추이를 조회합니다.</div>
+        </div>
+        <div class="drilldown-box">
+          <label>분석 키워드/소재:</label>
+          <input type="text" id="input-media-drilldown-kw" value="세무사">
+          <button class="btn btn-primary btn-sm" id="btn-apply-media-drilldown">조회</button>
+        </div>
+        <div class="table-container">
+          <table class="data-table" id="table-media-drilldown">
+            <thead>
+              <tr>
+                <th class="sortable" data-col="0">일자</th>
+                <th class="sortable" data-col="1">노출수</th>
+                <th class="sortable" data-col="2">클릭수</th>
+                <th class="sortable" data-col="3">CTR</th>
+                <th class="sortable" data-col="4">CPC</th>
+                <th class="sortable" data-col="5">비용(vat-)</th>
+                <th class="sortable" data-col="6">비용(vat+)</th>
+                <th class="sortable" data-col="7">총 리드</th>
+                <th class="sortable" data-col="8">유효 리드</th>
+                <th class="sortable" data-col="9">수임</th>
+                <th class="sortable" data-col="10">리드 CPA</th>
+                <th class="sortable" data-col="11">수임 CPA</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- TAB 4: 일별 키워드 추이 -->
     <div id="tab-daily-kw" class="tab-content">
       <div class="drilldown-box">
         <label>분석 대상 매체:</label>
@@ -278,26 +444,25 @@ html_content = """<!DOCTYPE html>
 
       <div class="section-card">
         <div class="section-header">
-          <div class="section-title">선택 키워드 일별 성과 추이 캘린더</div>
+          <div class="section-title">선택 키워드/소재 일별 성과 추이 캘린더 (헤더 클릭 시 정렬)</div>
         </div>
         <div class="table-container">
           <table class="data-table" id="table-daily-calendar">
             <thead>
               <tr>
-                <th>일자</th>
-                <th>요일</th>
-                <th>영업일구분</th>
-                <th>노출수</th>
-                <th>클릭수</th>
-                <th>CTR</th>
-                <th>CPC</th>
-                <th>광고비(vat-)</th>
-                <th>광고비(vat+)</th>
-                <th>총 리드</th>
-                <th>유효리드</th>
-                <th>수임</th>
-                <th>리드 CPA</th>
-                <th>수임 CPA</th>
+                <th class="sortable" data-col="0">일자</th>
+                <th class="sortable" data-col="1">요일</th>
+                <th class="sortable" data-col="2">노출수</th>
+                <th class="sortable" data-col="3">클릭수</th>
+                <th class="sortable" data-col="4">CTR</th>
+                <th class="sortable" data-col="5">CPC</th>
+                <th class="sortable" data-col="6">광고비(vat-)</th>
+                <th class="sortable" data-col="7">광고비(vat+)</th>
+                <th class="sortable" data-col="8">총 리드</th>
+                <th class="sortable" data-col="9">유효리드</th>
+                <th class="sortable" data-col="10">수임</th>
+                <th class="sortable" data-col="11">리드 CPA</th>
+                <th class="sortable" data-col="12">수임 CPA</th>
               </tr>
             </thead>
             <tbody></tbody>
@@ -306,34 +471,31 @@ html_content = """<!DOCTYPE html>
       </div>
     </div>
 
-    <!-- TAB 4: 주차별 추이 비교 -->
+    <!-- TAB 5: 주차별 추이 비교 -->
     <div id="tab-weekly" class="tab-content">
       <div class="section-card">
         <div class="section-header">
           <div>
             <div class="section-title">전체 주차별 성과 추이 및 전주 대비(WoW) 증감</div>
-            <div class="section-desc">8월 5주차 ~ 10월 2주차 전체 주차 성과 집계</div>
+            <div class="section-desc">26_36주 ~ 26_40주 주차별 실적 및 WoW 증감액</div>
           </div>
         </div>
         <div class="table-container">
           <table class="data-table" id="table-weekly-trend">
             <thead>
               <tr>
-                <th>주차 구분</th>
-                <th>주간코드</th>
-                <th>주간 기간</th>
-                <th>노출수</th>
-                <th>클릭수</th>
-                <th>CTR</th>
-                <th>CPC</th>
-                <th>광고비(vat-)</th>
-                <th>광고비(vat+)</th>
-                <th>총 리드</th>
-                <th>CPA</th>
-                <th>유효리드</th>
-                <th>CVR</th>
-                <th>수임</th>
-                <th>CPS</th>
+                <th class="sortable" data-col="0">주차 구분</th>
+                <th class="sortable" data-col="1">노출수</th>
+                <th class="sortable" data-col="2">클릭수</th>
+                <th class="sortable" data-col="3">CPC</th>
+                <th class="sortable" data-col="4">CTR</th>
+                <th class="sortable" data-col="5">비용(vat-)</th>
+                <th class="sortable" data-col="6">비용(vat+)</th>
+                <th class="sortable" data-col="7">총 리드</th>
+                <th class="sortable" data-col="8">리드 CPA</th>
+                <th class="sortable" data-col="9">유효 리드</th>
+                <th class="sortable" data-col="10">수임</th>
+                <th class="sortable" data-col="11">수임 CPA</th>
               </tr>
             </thead>
             <tbody></tbody>
@@ -342,115 +504,32 @@ html_content = """<!DOCTYPE html>
       </div>
     </div>
 
-    <!-- TAB 5: 월별 추이 비교 -->
+    <!-- TAB 6: 월별 추이 비교 -->
     <div id="tab-monthly" class="tab-content">
       <div class="section-card">
         <div class="section-header">
           <div>
-            <div class="section-title">월별 성과 진행 추이 및 전월 대비(MoM) 증감</div>
+            <div class="section-title">월별 성과 추이 및 MoM 실적 비교</div>
+            <div class="section-desc">2026년 9월 vs 10월 실적 비교</div>
           </div>
         </div>
         <div class="table-container">
           <table class="data-table" id="table-monthly-trend">
             <thead>
               <tr>
-                <th>월 구분</th>
-                <th>노출수</th>
-                <th>클릭수</th>
-                <th>CPC</th>
-                <th>CTR</th>
-                <th>CPM</th>
-                <th>광고비(vat-)</th>
-                <th>광고비(vat+)</th>
-                <th>총 리드</th>
-                <th>CPA</th>
-                <th>유효리드</th>
-                <th>CVR</th>
-                <th>수임</th>
-                <th>CPS</th>
-                <th>수익</th>
-              </tr>
-            </thead>
-            <tbody></tbody>
-          </table>
-        </div>
-      </div>
-    </div>
-
-    <!-- TAB 6: 매체별 상세 분석 -->
-    <div id="tab-media" class="tab-content">
-      <div class="sub-tabs" id="media-subtabs">
-        <button class="sub-tab-btn active" data-media="네이버 검색광고">네이버 검색광고</button>
-        <button class="sub-tab-btn" data-media="구글 검색광고">구글 검색광고</button>
-        <button class="sub-tab-btn" data-media="META">META</button>
-        <button class="sub-tab-btn" data-media="네이버 GFA">네이버 GFA</button>
-        <button class="sub-tab-btn" data-media="네이버 플레이스">네이버 플레이스</button>
-      </div>
-
-      <div class="kpi-grid" id="media-kpis"></div>
-
-      <!-- Media Daily Drilldown Section -->
-      <div class="section-card">
-        <div class="section-header">
-          <div>
-            <div class="section-title">매체 내 핵심 일별 드릴다운</div>
-            <div class="section-desc">키워드/소재명을 입력하면 최근 8일간 일별 성과가 실시간 표시됩니다.</div>
-          </div>
-          <div style="display: flex; gap: 8px; align-items: center;">
-            <label style="font-weight: 700; font-size: 11px;">드릴다운 대상:</label>
-            <input type="text" id="input-media-drilldown-kw" style="padding: 4px 8px; border: 1px solid var(--border-color); border-radius: 4px; font-weight: 600;">
-            <button class="btn btn-primary btn-sm" id="btn-apply-media-drilldown">적용</button>
-          </div>
-        </div>
-        <div class="table-container">
-          <table class="data-table" id="table-media-drilldown">
-            <thead>
-              <tr>
-                <th>일자</th>
-                <th>요일</th>
-                <th>영업일구분</th>
-                <th>노출수</th>
-                <th>클릭수</th>
-                <th>CTR</th>
-                <th>CPC</th>
-                <th>광고비(vat-)</th>
-                <th>광고비(vat+)</th>
-                <th>총 리드</th>
-                <th>유효리드</th>
-                <th>수임</th>
-                <th>리드 CPA</th>
-                <th>수임 CPA</th>
-              </tr>
-            </thead>
-            <tbody></tbody>
-          </table>
-        </div>
-      </div>
-
-      <!-- Media Keyword Ranking Table -->
-      <div class="section-card">
-        <div class="section-header">
-          <div class="section-title">매체 전체 키워드/소재 성과 순위 목록</div>
-          <input type="text" id="search-media-kw" placeholder="키워드/소재 검색..." style="padding: 4px 8px; border: 1px solid var(--border-color); border-radius: 4px; font-size: 11px; width: 180px;">
-        </div>
-        <div class="table-container">
-          <table class="data-table" id="table-media-ranking">
-            <thead>
-              <tr>
-                <th>순위</th>
-                <th>키워드 / 소재명</th>
-                <th>노출수</th>
-                <th>클릭수</th>
-                <th>비용(vat-)</th>
-                <th>비용(vat+)</th>
-                <th>CTR</th>
-                <th>CPC</th>
-                <th>총 리드</th>
-                <th>유효 리드</th>
-                <th>수임</th>
-                <th>리드 CPA</th>
-                <th>수임 CPA</th>
-                <th>전환율(CVR)</th>
+                <th class="sortable" data-col="0">월 구분</th>
+                <th class="sortable" data-col="1">노출수</th>
+                <th class="sortable" data-col="2">클릭수</th>
+                <th class="sortable" data-col="3">CPC</th>
+                <th class="sortable" data-col="4">CTR</th>
+                <th class="sortable" data-col="5">비용(vat-)</th>
+                <th class="sortable" data-col="6">비용(vat+)</th>
+                <th class="sortable" data-col="7">총 리드</th>
+                <th class="sortable" data-col="8">리드 CPA</th>
+                <th class="sortable" data-col="9">유효 리드</th>
+                <th class="sortable" data-col="10">수임</th>
+                <th class="sortable" data-col="11">수임 CPA</th>
+                <th class="sortable" data-col="12">수임 수익</th>
               </tr>
             </thead>
             <tbody></tbody>
@@ -490,10 +569,13 @@ html_content = """<!DOCTYPE html>
 
   <script>
     // Global State
+    // Format: [0: 일자, 1: 월, 2: 주차, 3: 매체, 4: 캠페인, 5: 그룹, 6: 키워드/소재, 7: 노출, 8: 클릭, 9: 비용, 10: 리드, 11: lost, 12: 유효리드, 13: 수임, 14: 수익]
     let RAW_DATA = [];
     let MIN_DATE = '2026-09-01';
     let MAX_DATE = '2026-10-01';
     let CURRENT_MEDIA = '네이버 검색광고';
+    let CURRENT_CAMPAIGN = 'ALL';
+    let CURRENT_GROUP = 'ALL';
 
     // Number Formatters
     const fmtNum = n => Math.round(n || 0).toLocaleString();
@@ -505,15 +587,14 @@ html_content = """<!DOCTYPE html>
     window.addEventListener('DOMContentLoaded', () => {
       loadInitialData();
       setupEvents();
+      setupTableSorting();
     });
 
     function loadInitialData() {
-      // Check IndexedDB / LocalStorage first
-      const savedData = localStorage.getItem('HEUM_CUSTOM_RAW');
+      const savedData = localStorage.getItem('HEUM_CUSTOM_RAW_V3');
       if (savedData) {
         try {
           RAW_DATA = JSON.parse(savedData);
-          console.log('Loaded from LocalStorage:', RAW_DATA.length);
         } catch (e) {
           RAW_DATA = window.DEFAULT_RAW_DATA || [];
         }
@@ -556,17 +637,17 @@ html_content = """<!DOCTYPE html>
       const filtered = getFilteredData();
       renderOverviewTab(filtered);
       renderBrandTab(filtered);
+      renderMediaTab(filtered);
       renderDailyKwTab(filtered);
       renderWeeklyTab(filtered);
       renderMonthlyTab(filtered);
-      renderMediaTab(filtered);
     }
 
     // TAB 1: Overview
     function renderOverviewTab(data) {
       let imp = 0, clk = 0, cost = 0, lead = 0, won = 0;
       data.forEach(r => {
-        imp += r[5]; clk += r[6]; cost += r[7]; lead += r[8]; won += r[11];
+        imp += r[7]; clk += r[8]; cost += r[9]; lead += r[10]; won += r[13];
       });
       const costVatExc = cost / 1.1;
       const budgetVatExc = 78500000;
@@ -574,7 +655,7 @@ html_content = """<!DOCTYPE html>
       const cpa = lead > 0 ? costVatExc / lead : 0;
       const cps = won > 0 ? costVatExc / won : 0;
 
-      const kpisHtml = `
+      document.getElementById('overview-kpis').innerHTML = `
         <div class="kpi-card">
           <div class="kpi-title">총 예산 (VAT 제외)</div>
           <div class="kpi-value">${fmtWon(budgetVatExc)}</div>
@@ -598,7 +679,7 @@ html_content = """<!DOCTYPE html>
         <div class="kpi-card">
           <div class="kpi-title">총 리드수 (Biz)</div>
           <div class="kpi-value">${fmtNum(lead)}</div>
-          <div class="kpi-sub">클릭 대비 전환율: ${fmtPct(clk > 0 ? lead / clk : 0)}</div>
+          <div class="kpi-sub">전환율: ${fmtPct(clk > 0 ? lead / clk : 0)}</div>
         </div>
         <div class="kpi-card">
           <div class="kpi-title">평균 리드 CPA</div>
@@ -608,7 +689,7 @@ html_content = """<!DOCTYPE html>
         <div class="kpi-card">
           <div class="kpi-title">총 최종 수임건수</div>
           <div class="kpi-value">${fmtNum(won)}</div>
-          <div class="kpi-sub">리드 대비 수임률: ${fmtPct1(lead > 0 ? won / lead : 0)}</div>
+          <div class="kpi-sub">수임률: ${fmtPct1(lead > 0 ? won / lead : 0)}</div>
         </div>
         <div class="kpi-card">
           <div class="kpi-title">수임당 비용 (CPS)</div>
@@ -616,142 +697,105 @@ html_content = """<!DOCTYPE html>
           <div class="kpi-sub">최종 고객 획득 비용</div>
         </div>
       `;
-      document.getElementById('overview-kpis').innerHTML = kpisHtml;
 
-      // Overview Media Table
-      const mediaConfigs = [
-        ["세무기장", "네이버 검색광고", 13100000, 14410000, 0.167, 129825, "네이버 검색광고"],
-        ["세무기장", "네이버브랜드검색광고", 750000, 825000, 0.010, 42857, "네이버브랜드검색광고"],
-        ["세무기장", "네이버 플레이스", 250000, 275000, 0.003, 250000, "네이버 플레이스"],
-        ["세무기장", "구글 검색광고", 13600000, 14960000, 0.173, 273404, "구글 검색광고"],
-        ["세무기장", "META", 50800000, 55880000, 0.647, 225250, "META"],
+      // Render Media Summary Table
+      const mediaList = [
+        { cat: '세무기장', name: '네이버 검색광고', budget: 35000000, targetCpa: 80000 },
+        { cat: '세무기장', name: '구글 검색광고', budget: 8500000, targetCpa: 80000 },
+        { cat: '세무기장', name: 'META', budget: 20000000, targetCpa: 90000 },
+        { cat: '세무기장', name: '네이버 GFA', budget: 5000000, targetCpa: 100000 },
+        { cat: '세무기장', name: '네이버 플레이스', budget: 2000000, targetCpa: 80000 },
+        { cat: '세무기장', name: '네이버브랜드검색광고', budget: 8000000, targetCpa: 50000 }
       ];
 
       const tbody = document.querySelector('#table-overview-media tbody');
       tbody.innerHTML = '';
 
-      let subImp = 0, subClk = 0, subCostExc = 0, subLead = 0, subWon = 0;
-      let totBudgetExc = 0, totBudgetInc = 0;
+      let tImp = 0, tClk = 0, tCost = 0, tLead = 0, tWon = 0;
 
-      mediaConfigs.forEach(mc => {
-        const [svc, medName, bExc, bInc, share, targetCpa, filterName] = mc;
-        totBudgetExc += bExc; totBudgetInc += bInc;
-
+      mediaList.forEach(m => {
         let mImp = 0, mClk = 0, mCost = 0, mLead = 0, mWon = 0;
         data.forEach(r => {
-          if (r[3] === filterName) {
-            mImp += r[5]; mClk += r[6]; mCost += r[7]; mLead += r[8]; mWon += r[11];
+          if (r[3] === m.name) {
+            mImp += r[7]; mClk += r[8]; mCost += r[9]; mLead += r[10]; mWon += r[13];
           }
         });
-        const mCostExc = mCost / 1.1;
-        const spendRatio = bExc > 0 ? mCostExc / bExc : 0;
-        const mCtr = mImp > 0 ? mClk / mImp : 0;
-        const mCpc = mClk > 0 ? mCostExc / mClk : 0;
-        const mCpa = mLead > 0 ? mCostExc / mLead : 0;
-        const mCps = mWon > 0 ? mCostExc / mWon : 0;
+        tImp += mImp; tClk += mClk; tCost += mCost; tLead += mLead; tWon += mWon;
 
-        subImp += mImp; subClk += mClk; subCostExc += mCostExc; subLead += mLead; subWon += mWon;
+        const mCostExc = mCost / 1.1;
+        const spendRate = m.budget > 0 ? mCostExc / m.budget : 0;
+        const ctr = mImp > 0 ? mClk / mImp : 0;
+        const cpc = mClk > 0 ? mCostExc / mClk : 0;
+        const cpa = mLead > 0 ? mCostExc / mLead : 0;
+        const cps = mWon > 0 ? mCostExc / mWon : 0;
+        const weight = budgetVatExc > 0 ? m.budget / budgetVatExc : 0;
 
         const tr = document.createElement('tr');
         tr.innerHTML = `
-          <td class="center">${svc}</td>
-          <td class="left">${medName}</td>
-          <td class="right">${fmtWon(bExc)}</td>
-          <td class="right">${fmtWon(bInc)}</td>
-          <td class="center">${fmtPct1(share)}</td>
-          <td class="center">${fmtPct1(spendRatio)}</td>
-          <td class="right">${fmtWon(targetCpa)}</td>
-          <td class="right">${fmtWon(mCpa)}</td>
+          <td class="center">${m.cat}</td>
+          <td class="left" style="font-weight: 600;">${m.name}</td>
+          <td class="right">${fmtWon(m.budget)}</td>
+          <td class="right">${fmtWon(m.budget * 1.1)}</td>
+          <td class="center">${fmtPct(weight)}</td>
+          <td class="center" style="font-weight: 700;">${fmtPct1(spendRate)}</td>
+          <td class="right">${fmtWon(m.targetCpa)}</td>
+          <td class="right" style="font-weight: 700;">${fmtWon(cpa)}</td>
           <td class="right">${fmtNum(mImp)}</td>
           <td class="right">${fmtNum(mClk)}</td>
           <td class="right">${fmtWon(mCostExc)}</td>
-          <td class="center">${fmtPct(mCtr)}</td>
-          <td class="right">${fmtWon(mCpc)}</td>
-          <td class="right">${fmtNum(mLead)}</td>
-          <td class="right">${fmtWon(mCpa)}</td>
-          <td class="right">${fmtNum(mWon)}</td>
-          <td class="right">${fmtWon(mCps)}</td>
+          <td class="center">${fmtPct(ctr)}</td>
+          <td class="right">${fmtWon(cpc)}</td>
+          <td class="right" style="font-weight: 700;">${fmtNum(mLead)}</td>
+          <td class="right">${fmtWon(cpa)}</td>
+          <td class="right" style="font-weight: 700;">${fmtNum(mWon)}</td>
+          <td class="right" style="font-weight: 700;">${fmtWon(cps)}</td>
         `;
         tbody.appendChild(tr);
       });
 
-      // Subtotal Row
-      const subCtr = subImp > 0 ? subClk / subImp : 0;
-      const subCpc = subClk > 0 ? subCostExc / subClk : 0;
-      const subCpa = subLead > 0 ? subCostExc / subLead : 0;
-      const subCps = subWon > 0 ? subCostExc / subWon : 0;
-      const subTr = document.createElement('tr');
-      subTr.className = 'total-row';
-      subTr.innerHTML = `
-        <td class="center" colspan="2">1차 목표 합계 (Total)</td>
-        <td class="right">${fmtWon(totBudgetExc)}</td>
-        <td class="right">${fmtWon(totBudgetInc)}</td>
-        <td class="center">100.0%</td>
-        <td class="center">${fmtPct1(totBudgetExc > 0 ? subCostExc / totBudgetExc : 0)}</td>
+      // Total Row
+      const tCostExc = tCost / 1.1;
+      const tTr = document.createElement('tr');
+      tTr.className = 'total-row';
+      tTr.innerHTML = `
+        <td class="center" colspan="2">합계</td>
+        <td class="right">${fmtWon(budgetVatExc)}</td>
+        <td class="right">${fmtWon(budgetVatExc * 1.1)}</td>
+        <td class="center">100.00%</td>
+        <td class="center">${fmtPct1(budgetVatExc > 0 ? tCostExc / budgetVatExc : 0)}</td>
         <td class="right">-</td>
-        <td class="right">${fmtWon(subCpa)}</td>
-        <td class="right">${fmtNum(subImp)}</td>
-        <td class="right">${fmtNum(subClk)}</td>
-        <td class="right">${fmtWon(subCostExc)}</td>
-        <td class="center">${fmtPct(subCtr)}</td>
-        <td class="right">${fmtWon(subCpc)}</td>
-        <td class="right">${fmtNum(subLead)}</td>
-        <td class="right">${fmtWon(subCpa)}</td>
-        <td class="right">${fmtNum(subWon)}</td>
-        <td class="right">${fmtWon(subCps)}</td>
+        <td class="right">${fmtWon(tLead > 0 ? tCostExc / tLead : 0)}</td>
+        <td class="right">${fmtNum(tImp)}</td>
+        <td class="right">${fmtNum(tClk)}</td>
+        <td class="right">${fmtWon(tCostExc)}</td>
+        <td class="center">${fmtPct(tImp > 0 ? tClk / tImp : 0)}</td>
+        <td class="right">${fmtWon(tClk > 0 ? tCostExc / tClk : 0)}</td>
+        <td class="right">${fmtNum(tLead)}</td>
+        <td class="right">${fmtWon(tLead > 0 ? tCostExc / tLead : 0)}</td>
+        <td class="right">${fmtNum(tWon)}</td>
+        <td class="right">${fmtWon(tWon > 0 ? tCostExc / tWon : 0)}</td>
       `;
-      tbody.appendChild(subTr);
+      tbody.appendChild(tTr);
     }
 
-    // TAB 2: Brand & Category
+    // TAB 2: Brand Keywords
     function renderBrandTab(data) {
       const categories = [
         {
-          title: "1. 혜움 브랜드 키워드군 (Brand Assets)",
-          items: [
-            ["혜움", "구글 검색광고"],
-            ["세무법인혜움", "네이버브랜드검색광고"],
-            ["혜움", "네이버브랜드검색광고"],
-            ["혜움", "네이버 검색광고"],
-            ["세무법인혜움", "네이버 검색광고"],
-          ]
+          name: "브랜드 자산군",
+          keywords: ["혜움", "세무법인혜움", "알프레드혜움", "세무사혜움", "헤움", "혜윰", "주식회사혜움", "혜움세무법인", "세무혜움", "혜움상담"]
         },
         {
-          title: "2. 세무기장 핵심 직무 키워드군 (Core Tax Accounting)",
-          items: [
-            ["세무사", "네이버 검색광고"],
-            ["세무", "구글 검색광고"],
-            ["세무법인", "네이버 검색광고"],
-            ["법인세무기장", "네이버 검색광고"],
-            ["법인기장", "네이버 검색광고"],
-            ["세무기장", "네이버 검색광고"],
-            ["기장대행", "네이버 검색광고"],
-            ["개인사업자세무사", "네이버 검색광고"],
-            ["개인사업자세무대행", "네이버 검색광고"],
-            ["기장신고", "네이버 검색광고"],
-            ["세무사추천", "네이버 검색광고"],
-          ]
+          name: "핵심 직무군",
+          keywords: ["세무기장", "기장대리", "세무사", "세무대리", "세무사기장", "법인세무기장", "개인사업자세무기장", "사업자세무기장"]
         },
         {
-          title: "3. 특수 세목 및 컨설팅 키워드군 (Tax Consulting)",
-          items: [
-            ["법인세금", "구글 검색광고"],
-            ["증여세세무사", "네이버 검색광고"],
-            ["상속세세무사", "네이버 검색광고"],
-            ["양도소득세세무사", "네이버 검색광고"],
-            ["무료세무상담", "네이버 검색광고"],
-          ]
+          name: "컨설팅/특화군",
+          keywords: ["연구전담부서", "벤처인증", "고용지원금", "법인전환", "가업승계", "세무컨설팅", "경정청구"]
         },
         {
-          title: "4. 로컬 및 지역 타겟 키워드군 (Local Targeting)",
-          items: [
-            ["강서구세무사", "네이버 검색광고"],
-            ["고양세무사", "네이버 검색광고"],
-            ["동탄세무사", "네이버 검색광고"],
-            ["마포구세무사", "구글 검색광고"],
-            ["인천세무사", "구글 검색광고"],
-            ["김해세무사", "네이버 검색광고"],
-          ]
+          name: "로컬 타겟군",
+          keywords: ["강남세무사", "서초세무사", "역삼세무사", "가산세무사", "판교세무사", "송파세무사"]
         }
       ];
 
@@ -759,316 +803,90 @@ html_content = """<!DOCTYPE html>
       tbody.innerHTML = '';
 
       categories.forEach(cat => {
-        const headerTr = document.createElement('tr');
-        headerTr.className = 'cat-header';
-        headerTr.innerHTML = `<td colspan="15" class="left">${cat.title}</td>`;
-        tbody.appendChild(headerTr);
+        const catTr = document.createElement('tr');
+        catTr.className = 'cat-header';
+        catTr.innerHTML = `<td colspan="15">[카테고리] ${cat.name}</td>`;
+        tbody.appendChild(catTr);
 
-        let catImp = 0, catClk = 0, catCost = 0, catLead = 0, catEffLead = 0, catWon = 0;
+        let cImp = 0, cClk = 0, cCost = 0, cLead = 0, cEff = 0, cWon = 0;
 
-        cat.items.forEach(([kw, med]) => {
+        cat.keywords.forEach(kw => {
           let kImp = 0, kClk = 0, kCost = 0, kLead = 0, kEff = 0, kWon = 0;
+          let medMap = {};
           data.forEach(r => {
-            if (r[3] === med && r[4] === kw) {
-              kImp += r[5]; kClk += r[6]; kCost += r[7]; kLead += r[8]; kEff += r[10]; kWon += r[11];
+            if (r[6] === kw) {
+              kImp += r[7]; kClk += r[8]; kCost += r[9]; kLead += r[10]; kEff += r[12]; kWon += r[13];
+              medMap[r[3]] = (medMap[r[3]] || 0) + r[8];
             }
           });
-          const kCostExc = kCost / 1.1;
-          const kCtr = kImp > 0 ? kClk / kImp : 0;
-          const kCpc = kClk > 0 ? kCostExc / kClk : 0;
-          const kCpa = kLead > 0 ? kCostExc / kLead : 0;
-          const kCps = kWon > 0 ? kCostExc / kWon : 0;
-          const kCvr = kClk > 0 ? kLead / kClk : 0;
 
-          catImp += kImp; catClk += kClk; catCost += kCost; catLead += kLead; catEffLead += kEff; catWon += kWon;
+          cImp += kImp; cClk += kClk; cCost += kCost; cLead += kLead; cEff += kEff; cWon += kWon;
+
+          let topMed = Object.keys(medMap).sort((a,b) => medMap[b] - medMap[a])[0] || '-';
+          const kCostExc = kCost / 1.1;
+          const ctr = kImp > 0 ? kClk / kImp : 0;
+          const cpc = kClk > 0 ? kCostExc / kClk : 0;
+          const cpa = kLead > 0 ? kCostExc / kLead : 0;
+          const cps = kWon > 0 ? kCostExc / kWon : 0;
+          const cvr = kClk > 0 ? kLead / kClk : 0;
 
           const tr = document.createElement('tr');
           tr.innerHTML = `
-            <td class="center">${cat.title.split('.')[1].split('(')[0].trim()}</td>
-            <td class="left">${kw}</td>
-            <td class="center">${med}</td>
+            <td class="center">${cat.name}</td>
+            <td class="left" style="font-weight: 600;">${kw}</td>
+            <td class="center">${topMed}</td>
             <td class="right">${fmtNum(kImp)}</td>
             <td class="right">${fmtNum(kClk)}</td>
             <td class="right">${fmtWon(kCostExc)}</td>
             <td class="right">${fmtWon(kCost)}</td>
-            <td class="center">${fmtPct(kCtr)}</td>
-            <td class="right">${fmtWon(kCpc)}</td>
-            <td class="right">${fmtNum(kLead)}</td>
+            <td class="center">${fmtPct(ctr)}</td>
+            <td class="right">${fmtWon(cpc)}</td>
+            <td class="right" style="font-weight: 700;">${fmtNum(kLead)}</td>
             <td class="right">${fmtNum(kEff)}</td>
-            <td class="right">${fmtNum(kWon)}</td>
-            <td class="right">${fmtWon(kCpa)}</td>
-            <td class="right">${fmtWon(kCps)}</td>
-            <td class="center">${fmtPct1(kCvr)}</td>
+            <td class="right" style="font-weight: 700;">${fmtNum(kWon)}</td>
+            <td class="right">${fmtWon(cpa)}</td>
+            <td class="right">${fmtWon(cps)}</td>
+            <td class="center">${fmtPct1(cvr)}</td>
           `;
           tbody.appendChild(tr);
         });
 
         // Category Subtotal
-        const catCostExc = catCost / 1.1;
+        const cCostExc = cCost / 1.1;
         const subTr = document.createElement('tr');
-        subTr.className = 'total-row';
+        subTr.style.background = '#F2F6FA';
+        subTr.style.fontWeight = '700';
         subTr.innerHTML = `
-          <td colspan="3" class="center">${cat.title.split('.')[1].split('(')[0].trim()} 소계</td>
-          <td class="right">${fmtNum(catImp)}</td>
-          <td class="right">${fmtNum(catClk)}</td>
-          <td class="right">${fmtWon(catCostExc)}</td>
-          <td class="right">${fmtWon(catCost)}</td>
-          <td class="center">${fmtPct(catImp > 0 ? catClk / catImp : 0)}</td>
-          <td class="right">${fmtWon(catClk > 0 ? catCostExc / catClk : 0)}</td>
-          <td class="right">${fmtNum(catLead)}</td>
-          <td class="right">${fmtNum(catEffLead)}</td>
-          <td class="right">${fmtNum(catWon)}</td>
-          <td class="right">${fmtWon(catLead > 0 ? catCostExc / catLead : 0)}</td>
-          <td class="right">${fmtWon(catWon > 0 ? catCostExc / catWon : 0)}</td>
-          <td class="center">${fmtPct1(catClk > 0 ? catLead / catClk : 0)}</td>
+          <td class="center" colspan="3">${cat.name} 소계</td>
+          <td class="right">${fmtNum(cImp)}</td>
+          <td class="right">${fmtNum(cClk)}</td>
+          <td class="right">${fmtWon(cCostExc)}</td>
+          <td class="right">${fmtWon(cCost)}</td>
+          <td class="center">${fmtPct(cImp > 0 ? cClk / cImp : 0)}</td>
+          <td class="right">${fmtWon(cClk > 0 ? cCostExc / cClk : 0)}</td>
+          <td class="right">${fmtNum(cLead)}</td>
+          <td class="right">${fmtNum(cEff)}</td>
+          <td class="right">${fmtNum(cWon)}</td>
+          <td class="right">${fmtWon(cLead > 0 ? cCostExc / cLead : 0)}</td>
+          <td class="right">${fmtWon(cWon > 0 ? cCostExc / cWon : 0)}</td>
+          <td class="center">${fmtPct1(cClk > 0 ? cLead / cClk : 0)}</td>
         `;
         tbody.appendChild(subTr);
       });
     }
 
-    // TAB 3: Daily Keyword Drill-down
-    function renderDailyKwTab(data) {
-      const targetMed = document.getElementById('select-daily-media').value;
-      const targetKw = document.getElementById('input-daily-kw').value.trim();
-
-      // Filter for this keyword across 31 days
-      const days = [
-        "2026-09-01", "2026-09-02", "2026-09-03", "2026-09-04", "2026-09-05", "2026-09-06",
-        "2026-09-07", "2026-09-08", "2026-09-09", "2026-09-10", "2026-09-11", "2026-09-12",
-        "2026-09-13", "2026-09-14", "2026-09-15", "2026-09-16", "2026-09-17", "2026-09-18",
-        "2026-09-19", "2026-09-20", "2026-09-21", "2026-09-22", "2026-09-23", "2026-09-24",
-        "2026-09-25", "2026-09-26", "2026-09-27", "2026-09-28", "2026-09-29", "2026-09-30", "2026-10-01"
-      ];
-
-      let totImp = 0, totClk = 0, totCost = 0, totLead = 0, totEff = 0, totWon = 0;
-      const tbody = document.querySelector('#table-daily-calendar tbody');
-      tbody.innerHTML = '';
-
-      days.forEach(dStr => {
-        let dImp = 0, dClk = 0, dCost = 0, dLead = 0, dEff = 0, dWon = 0;
-        data.forEach(r => {
-          if (r[0] === dStr && r[3] === targetMed && r[4] === targetKw) {
-            dImp += r[5]; dClk += r[6]; dCost += r[7]; dLead += r[8]; dEff += r[10]; dWon += r[11];
-          }
-        });
-        const dCostExc = dCost / 1.1;
-        const dCtr = dImp > 0 ? dClk / dImp : 0;
-        const dCpc = dClk > 0 ? dCostExc / dClk : 0;
-        const dCpa = dLead > 0 ? dCostExc / dLead : 0;
-        const dCps = dWon > 0 ? dCostExc / dWon : 0;
-
-        totImp += dImp; totClk += dClk; totCost += dCost; totLead += dLead; totEff += dEff; totWon += dWon;
-
-        const dateObj = new Date(dStr);
-        const dayNames = ['일', '월', '화', '수', '목', '금', '토'];
-        const dayName = dayNames[dateObj.getDay()];
-        const bizType = (dateObj.getDay() === 0 || dateObj.getDay() === 6) ? '주말' : '영업일';
-
-        const tr = document.createElement('tr');
-        tr.innerHTML = `
-          <td class="center">${dStr}</td>
-          <td class="center">${dayName}</td>
-          <td class="center">${bizType}</td>
-          <td class="right">${fmtNum(dImp)}</td>
-          <td class="right">${fmtNum(dClk)}</td>
-          <td class="center">${fmtPct(dCtr)}</td>
-          <td class="right">${fmtWon(dCpc)}</td>
-          <td class="right">${fmtWon(dCostExc)}</td>
-          <td class="right">${fmtWon(dCost)}</td>
-          <td class="right">${fmtNum(dLead)}</td>
-          <td class="right">${fmtNum(dEff)}</td>
-          <td class="right">${fmtNum(dWon)}</td>
-          <td class="right">${fmtWon(dCpa)}</td>
-          <td class="right">${fmtWon(dCps)}</td>
-        `;
-        tbody.appendChild(tr);
-      });
-
-      // Total Row
-      const totCostExc = totCost / 1.1;
-      const totTr = document.createElement('tr');
-      totTr.className = 'total-row';
-      totTr.innerHTML = `
-        <td colspan="3" class="center">31일 선택 기간 합계</td>
-        <td class="right">${fmtNum(totImp)}</td>
-        <td class="right">${fmtNum(totClk)}</td>
-        <td class="center">${fmtPct(totImp > 0 ? totClk / totImp : 0)}</td>
-        <td class="right">${fmtWon(totClk > 0 ? totCostExc / totClk : 0)}</td>
-        <td class="right">${fmtWon(totCostExc)}</td>
-        <td class="right">${fmtWon(totCost)}</td>
-        <td class="right">${fmtNum(totLead)}</td>
-        <td class="right">${fmtNum(totEff)}</td>
-        <td class="right">${fmtNum(totWon)}</td>
-        <td class="right">${fmtWon(totLead > 0 ? totCostExc / totLead : 0)}</td>
-        <td class="right">${fmtWon(totWon > 0 ? totCostExc / totWon : 0)}</td>
-      `;
-      tbody.appendChild(totTr);
-
-      // Render KPIs
-      document.getElementById('daily-kw-kpis').innerHTML = `
-        <div class="kpi-card">
-          <div class="kpi-title">${targetKw} 총 노출수</div>
-          <div class="kpi-value">${fmtNum(totImp)}</div>
-        </div>
-        <div class="kpi-card">
-          <div class="kpi-title">${targetKw} 총 클릭수</div>
-          <div class="kpi-value">${fmtNum(totClk)}</div>
-        </div>
-        <div class="kpi-card">
-          <div class="kpi-title">${targetKw} 총 소진액(VAT-)</div>
-          <div class="kpi-value">${fmtWon(totCostExc)}</div>
-        </div>
-        <div class="kpi-card">
-          <div class="kpi-title">${targetKw} 총 리드수</div>
-          <div class="kpi-value">${fmtNum(totLead)}</div>
-        </div>
-        <div class="kpi-card">
-          <div class="kpi-title">${targetKw} 총 수임건수</div>
-          <div class="kpi-value">${fmtNum(totWon)}</div>
-        </div>
-        <div class="kpi-card">
-          <div class="kpi-title">${targetKw} 평균 CPA/CPS</div>
-          <div class="kpi-value">${fmtWon(totWon > 0 ? totCostExc / totWon : 0)}</div>
-        </div>
-      `;
-    }
-
-    // TAB 4: Weekly Trend & WoW
-    function renderWeeklyTab(data) {
-      const weeks = [
-        ["8월 5주차", "26_35주", "08/31 ~ 09/06"],
-        ["9월 1주차", "26_36주", "09/07 ~ 09/13"],
-        ["9월 2주차", "26_37주", "09/14 ~ 09/20"],
-        ["9월 3주차", "26_38주", "09/21 ~ 09/27"],
-        ["9월 4주차", "26_39주", "09/28 ~ 10/04"],
-        ["10월 1주차", "26_40주", "10/05 ~ 10/11"],
-      ];
-
-      const tbody = document.querySelector('#table-weekly-trend tbody');
-      tbody.innerHTML = '';
-
-      let weekStats = [];
-      weeks.forEach(([wName, wCode, wRange]) => {
-        let wImp = 0, wClk = 0, wCost = 0, wLead = 0, wEff = 0, wWon = 0;
-        data.forEach(r => {
-          if (r[2] && r[2].startsWith(wCode)) {
-            wImp += r[5]; wClk += r[6]; wCost += r[7]; wLead += r[8]; wEff += r[10]; wWon += r[11];
-          }
-        });
-        const wCostExc = wCost / 1.1;
-        const wCtr = wImp > 0 ? wClk / wImp : 0;
-        const wCpc = wClk > 0 ? wCostExc / wClk : 0;
-        const wCpa = wLead > 0 ? wCostExc / wLead : 0;
-        const wCps = wWon > 0 ? wCostExc / wWon : 0;
-        const wCvr = wClk > 0 ? wLead / wClk : 0;
-
-        weekStats.push({ wName, wCode, wImp, wClk, wCostExc, wCost, wCtr, wCpc, wLead, wEff, wWon, wCpa, wCps, wCvr });
-
-        const tr = document.createElement('tr');
-        tr.innerHTML = `
-          <td class="center">${wName}</td>
-          <td class="center">${wCode}</td>
-          <td class="center">${wRange}</td>
-          <td class="right">${fmtNum(wImp)}</td>
-          <td class="right">${fmtNum(wClk)}</td>
-          <td class="center">${fmtPct(wCtr)}</td>
-          <td class="right">${fmtWon(wCpc)}</td>
-          <td class="right">${fmtWon(wCostExc)}</td>
-          <td class="right">${fmtWon(wCost)}</td>
-          <td class="right">${fmtNum(wLead)}</td>
-          <td class="right">${fmtWon(wCpa)}</td>
-          <td class="right">${fmtNum(wEff)}</td>
-          <td class="center">${fmtPct1(wCvr)}</td>
-          <td class="right">${fmtNum(wWon)}</td>
-          <td class="right">${fmtWon(wCps)}</td>
-        `;
-        tbody.appendChild(tr);
-      });
-
-      // WoW Comparison (Week 4 vs Week 3)
-      if (weekStats.length >= 5) {
-        const w4 = weekStats[4]; // 9월 4주
-        const w3 = weekStats[3]; // 9월 3주
-
-        const diffImp = w4.wImp - w3.wImp;
-        const diffClk = w4.wClk - w3.wClk;
-        const diffCostExc = w4.wCostExc - w3.wCostExc;
-        const diffLead = w4.wLead - w3.wLead;
-        const diffWon = w4.wWon - w3.wWon;
-
-        const wowTr = document.createElement('tr');
-        wowTr.className = 'wow-diff';
-        wowTr.innerHTML = `
-          <td class="center" colspan="3">최근주 전주 대비 증감 (WoW Diff: 9월 4주 vs 3주)</td>
-          <td class="right">${diffImp >= 0 ? '+' : ''}${fmtNum(diffImp)}</td>
-          <td class="right">${diffClk >= 0 ? '+' : ''}${fmtNum(diffClk)}</td>
-          <td class="center">${fmtPct(w4.wCtr - w3.wCtr)}</td>
-          <td class="right">${fmtWon(w4.wCpc - w3.wCpc)}</td>
-          <td class="right">${diffCostExc >= 0 ? '+' : ''}${fmtWon(diffCostExc)}</td>
-          <td class="right">-</td>
-          <td class="right">${diffLead >= 0 ? '+' : ''}${fmtNum(diffLead)}</td>
-          <td class="right">${fmtWon(w4.wCpa - w3.wCpa)}</td>
-          <td class="right">${fmtNum(w4.wEff - w3.wEff)}</td>
-          <td class="center">${fmtPct1(w4.wCvr - w3.wCvr)}</td>
-          <td class="right">${diffWon >= 0 ? '+' : ''}${fmtNum(diffWon)}</td>
-          <td class="right">${fmtWon(w4.wCps - w3.wCps)}</td>
-        `;
-        tbody.appendChild(wowTr);
-      }
-    }
-
-    // TAB 5: Monthly Trend & MoM
-    function renderMonthlyTab(data) {
-      const months = ["2026.09.", "2026.10."];
-      const tbody = document.querySelector('#table-monthly-trend tbody');
-      tbody.innerHTML = '';
-
-      let mStats = [];
-      months.forEach(mStr => {
-        let mImp = 0, mClk = 0, mCost = 0, mLead = 0, mEff = 0, mWon = 0, mRev = 0;
-        data.forEach(r => {
-          if (r[1] === mStr) {
-            mImp += r[5]; mClk += r[6]; mCost += r[7]; mLead += r[8]; mEff += r[10]; mWon += r[11]; mRev += r[12];
-          }
-        });
-        const mCostExc = mCost / 1.1;
-        const mCtr = mImp > 0 ? mClk / mImp : 0;
-        const mCpc = mClk > 0 ? mCostExc / mClk : 0;
-        const mCpm = mImp > 0 ? (mCostExc / mImp) * 1000 : 0;
-        const mCpa = mLead > 0 ? mCostExc / mLead : 0;
-        const mCps = mWon > 0 ? mCostExc / mWon : 0;
-        const mCvr = mClk > 0 ? mLead / mClk : 0;
-
-        mStats.push({ mStr, mImp, mClk, mCostExc, mCost, mCpc, mCtr, mCpm, mLead, mEff, mWon, mRev, mCpa, mCps, mCvr });
-
-        const tr = document.createElement('tr');
-        tr.innerHTML = `
-          <td class="center">${mStr}</td>
-          <td class="right">${fmtNum(mImp)}</td>
-          <td class="right">${fmtNum(mClk)}</td>
-          <td class="right">${fmtWon(mCpc)}</td>
-          <td class="center">${fmtPct(mCtr)}</td>
-          <td class="right">${fmtWon(mCpm)}</td>
-          <td class="right">${fmtWon(mCostExc)}</td>
-          <td class="right">${fmtWon(mCost)}</td>
-          <td class="right">${fmtNum(mLead)}</td>
-          <td class="right">${fmtWon(mCpa)}</td>
-          <td class="right">${fmtNum(mEff)}</td>
-          <td class="center">${fmtPct1(mCvr)}</td>
-          <td class="right">${fmtNum(mWon)}</td>
-          <td class="right">${fmtWon(mCps)}</td>
-          <td class="right">${fmtWon(mRev)}</td>
-        `;
-        tbody.appendChild(tr);
-      });
-    }
-
-    // TAB 6: Media Detail
+    // TAB 3: Media Detail (전면 강화)
     function renderMediaTab(data) {
+      document.getElementById('txt-media-weekly-title').textContent = CURRENT_MEDIA;
+      document.getElementById('txt-media-daily-all-title').textContent = CURRENT_MEDIA;
+      document.getElementById('txt-media-ranking-title').textContent = CURRENT_MEDIA;
+
       const mediaData = data.filter(r => r[3] === CURRENT_MEDIA);
-      let imp = 0, clk = 0, cost = 0, lead = 0, won = 0;
+
+      // KPI Calculation
+      let imp = 0, clk = 0, cost = 0, lead = 0, eff = 0, won = 0;
       mediaData.forEach(r => {
-        imp += r[5]; clk += r[6]; cost += r[7]; lead += r[8]; won += r[11];
+        imp += r[7]; clk += r[8]; cost += r[9]; lead += r[10]; eff += r[12]; won += r[13];
       });
       const costExc = cost / 1.1;
 
@@ -1076,42 +894,188 @@ html_content = """<!DOCTYPE html>
         <div class="kpi-card"><div class="kpi-title">${CURRENT_MEDIA} 총 노출수</div><div class="kpi-value">${fmtNum(imp)}</div></div>
         <div class="kpi-card"><div class="kpi-title">${CURRENT_MEDIA} 총 클릭수</div><div class="kpi-value">${fmtNum(clk)}</div></div>
         <div class="kpi-card"><div class="kpi-title">${CURRENT_MEDIA} 총 비용(VAT-)</div><div class="kpi-value">${fmtWon(costExc)}</div></div>
-        <div class="kpi-card"><div class="kpi-title">${CURRENT_MEDIA} 총 리드</div><div class="kpi-value">${fmtNum(lead)}</div></div>
-        <div class="kpi-card"><div class="kpi-title">${CURRENT_MEDIA} 총 수임</div><div class="kpi-value">${fmtNum(won)}</div></div>
-        <div class="kpi-card"><div class="kpi-title">${CURRENT_MEDIA} 평균 CPA / CPS</div><div class="kpi-value">${fmtWon(won > 0 ? costExc / won : 0)}</div></div>
+        <div class="kpi-card"><div class="kpi-title">${CURRENT_MEDIA} 총 리드수</div><div class="kpi-value">${fmtNum(lead)}</div></div>
+        <div class="kpi-card"><div class="kpi-title">${CURRENT_MEDIA} 총 유효리드</div><div class="kpi-value">${fmtNum(eff)}</div></div>
+        <div class="kpi-card"><div class="kpi-title">${CURRENT_MEDIA} 총 최종수임</div><div class="kpi-value">${fmtNum(won)}</div></div>
+        <div class="kpi-card"><div class="kpi-title">${CURRENT_MEDIA} 리드 CPA</div><div class="kpi-value">${fmtWon(lead > 0 ? costExc / lead : 0)}</div></div>
+        <div class="kpi-card"><div class="kpi-title">${CURRENT_MEDIA} 수임 CPA</div><div class="kpi-value">${fmtWon(won > 0 ? costExc / won : 0)}</div></div>
       `;
 
-      // Keywords aggregate
-      const kwMap = {};
+      // Update Campaign & Group Dropdowns
+      updateCampaignGroupDropdowns(mediaData);
+
+      // 1. Render Media Weekly Trend Table
+      renderMediaWeeklyTable(mediaData);
+
+      // 2. Render Media Daily All Table
+      renderMediaDailyAllTable(mediaData);
+
+      // 3. Render Media Ranking Table (with Campaign & Group Filters)
+      renderMediaRankingTable(mediaData);
+
+      // 4. Render Media Single Keyword Drilldown
+      renderMediaDrilldown(mediaData);
+    }
+
+    function updateCampaignGroupDropdowns(mediaData) {
+      const campSelect = document.getElementById('select-media-campaign');
+      const grpSelect = document.getElementById('select-media-group');
+
+      const campaigns = Array.from(new Set(mediaData.map(r => r[4]).filter(c => c && c !== '-'))).sort();
+      const groups = Array.from(new Set(mediaData.map(r => r[5]).filter(g => g && g !== '-'))).sort();
+
+      const prevCamp = campSelect.value;
+      const prevGrp = grpSelect.value;
+
+      campSelect.innerHTML = '<option value="ALL">전체 캠페인</option>' + 
+        campaigns.map(c => `<option value="${c}">${c}</option>`).join('');
+      grpSelect.innerHTML = '<option value="ALL">전체 그룹</option>' + 
+        groups.map(g => `<option value="${g}">${g}</option>`).join('');
+
+      if (campaigns.includes(prevCamp)) campSelect.value = prevCamp;
+      else CURRENT_CAMPAIGN = 'ALL';
+
+      if (groups.includes(prevGrp)) grpSelect.value = prevGrp;
+      else CURRENT_GROUP = 'ALL';
+    }
+
+    // Media Weekly Table
+    function renderMediaWeeklyTable(mediaData) {
+      const weeks = [
+        "26_36주(09/07~09/13)", "26_37주(09/14~09/20)", 
+        "26_38주(09/21~09/27)", "26_39주(09/28~10/04)", "26_40주(10/05~10/11)"
+      ];
+
+      const tbody = document.querySelector('#table-media-weekly tbody');
+      tbody.innerHTML = '';
+
+      weeks.forEach(wStr => {
+        let wImp = 0, wClk = 0, wCost = 0, wLead = 0, wEff = 0, wWon = 0;
+        mediaData.forEach(r => {
+          if (r[2] === wStr) {
+            wImp += r[7]; wClk += r[8]; wCost += r[9]; wLead += r[10]; wEff += r[12]; wWon += r[13];
+          }
+        });
+
+        if (wImp === 0 && wClk === 0 && wCost === 0 && wLead === 0) return;
+
+        const wCostExc = wCost / 1.1;
+        const ctr = wImp > 0 ? wClk / wImp : 0;
+        const cpc = wClk > 0 ? wCostExc / wClk : 0;
+        const cpa = wLead > 0 ? wCostExc / wLead : 0;
+        const cps = wWon > 0 ? wCostExc / wWon : 0;
+
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+          <td class="center" style="font-weight: 600;">${wStr}</td>
+          <td class="right">${fmtNum(wImp)}</td>
+          <td class="right">${fmtNum(wClk)}</td>
+          <td class="center">${fmtPct(ctr)}</td>
+          <td class="right">${fmtWon(cpc)}</td>
+          <td class="right">${fmtWon(wCostExc)}</td>
+          <td class="right">${fmtWon(wCost)}</td>
+          <td class="right" style="font-weight: 700;">${fmtNum(wLead)}</td>
+          <td class="right">${fmtNum(wEff)}</td>
+          <td class="right" style="font-weight: 700;">${fmtNum(wWon)}</td>
+          <td class="right">${fmtWon(cpa)}</td>
+          <td class="right">${fmtWon(cps)}</td>
+        `;
+        tbody.appendChild(tr);
+      });
+    }
+
+    // Media Daily All Table
+    function renderMediaDailyAllTable(mediaData) {
+      const dateMap = {};
       mediaData.forEach(r => {
-        const kw = r[4];
-        if (!kw || kw === '-' || kw === '0') return;
-        if (!kwMap[kw]) kwMap[kw] = { kw, imp: 0, clk: 0, cost: 0, lead: 0, eff: 0, won: 0 };
-        kwMap[kw].imp += r[5];
-        kwMap[kw].clk += r[6];
-        kwMap[kw].cost += r[7];
-        kwMap[kw].lead += r[8];
-        kwMap[kw].eff += r[10];
-        kwMap[kw].won += r[11];
+        const d = r[0];
+        if (!dateMap[d]) dateMap[d] = { d, imp: 0, clk: 0, cost: 0, lead: 0, eff: 0, won: 0 };
+        dateMap[d].imp += r[7];
+        dateMap[d].clk += r[8];
+        dateMap[d].cost += r[9];
+        dateMap[d].lead += r[10];
+        dateMap[d].eff += r[12];
+        dateMap[d].won += r[13];
       });
 
-      const kwList = Object.values(kwMap).sort((a, b) => (b.won - a.won) || (b.lead - a.lead) || (b.cost - a.cost));
+      const dates = Object.keys(dateMap).sort();
+      const tbody = document.querySelector('#table-media-daily-all tbody');
+      tbody.innerHTML = '';
 
-      // Media Drilldown Input Default
-      const drillKwInput = document.getElementById('input-media-drilldown-kw');
-      if (!drillKwInput.value || !kwMap[drillKwInput.value]) {
-        drillKwInput.value = kwList.length > 0 ? kwList[0].kw : '세무사';
-      }
-      renderMediaDrilldown(data);
+      const dayNames = ['일', '월', '화', '수', '목', '금', '토'];
 
-      // Render Ranking Table
+      dates.forEach(dStr => {
+        const item = dateMap[dStr];
+        const dt = new Date(dStr);
+        const dayOfWeek = dayNames[dt.getDay()] || '';
+        const cExc = item.cost / 1.1;
+        const ctr = item.imp > 0 ? item.clk / item.imp : 0;
+        const cpc = item.clk > 0 ? cExc / item.clk : 0;
+        const cpa = item.lead > 0 ? cExc / item.lead : 0;
+        const cps = item.won > 0 ? cExc / item.won : 0;
+
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+          <td class="center" style="font-weight: 600;">${dStr}</td>
+          <td class="center">${dayOfWeek}</td>
+          <td class="right">${fmtNum(item.imp)}</td>
+          <td class="right">${fmtNum(item.clk)}</td>
+          <td class="center">${fmtPct(ctr)}</td>
+          <td class="right">${fmtWon(cpc)}</td>
+          <td class="right">${fmtWon(cExc)}</td>
+          <td class="right">${fmtWon(item.cost)}</td>
+          <td class="right" style="font-weight: 700;">${fmtNum(item.lead)}</td>
+          <td class="right">${fmtNum(item.eff)}</td>
+          <td class="right" style="font-weight: 700;">${fmtNum(item.won)}</td>
+          <td class="right">${fmtWon(cpa)}</td>
+          <td class="right">${fmtWon(cps)}</td>
+        `;
+        tbody.appendChild(tr);
+      });
+    }
+
+    // Media Ranking Table (with Campaign & Group & Keyword/Creative)
+    function renderMediaRankingTable(mediaData) {
+      const campFilter = document.getElementById('select-media-campaign').value;
+      const grpFilter = document.getElementById('select-media-group').value;
       const searchTxt = (document.getElementById('search-media-kw').value || '').toLowerCase();
+
+      // Filter by Campaign / Group
+      let filtered = mediaData;
+      if (campFilter !== 'ALL') filtered = filtered.filter(r => r[4] === campFilter);
+      if (grpFilter !== 'ALL') filtered = filtered.filter(r => r[5] === grpFilter);
+
+      // Aggregate by [Campaign, Group, Keyword/Creative]
+      const aggMap = {};
+      filtered.forEach(r => {
+        const camp = r[4] || '-';
+        const grp = r[5] || '-';
+        const kw = r[6] || '-';
+        if (kw === '-' && r[7] === 0 && r[8] === 0 && r[9] === 0 && r[10] === 0) return;
+
+        const key = `${camp}__${grp}__${kw}`;
+        if (!aggMap[key]) {
+          aggMap[key] = { camp, grp, kw, imp: 0, clk: 0, cost: 0, lead: 0, eff: 0, won: 0 };
+        }
+        aggMap[key].imp += r[7];
+        aggMap[key].clk += r[8];
+        aggMap[key].cost += r[9];
+        aggMap[key].lead += r[10];
+        aggMap[key].eff += r[12];
+        aggMap[key].won += r[13];
+      });
+
+      const list = Object.values(aggMap).sort((a, b) => (b.won - a.won) || (b.lead - a.lead) || (b.cost - a.cost));
+
       const tbody = document.querySelector('#table-media-ranking tbody');
       tbody.innerHTML = '';
 
       let rank = 1;
-      kwList.slice(0, 150).forEach(item => {
-        if (searchTxt && !item.kw.toLowerCase().includes(searchTxt)) return;
+      list.slice(0, 200).forEach(item => {
+        if (searchTxt && !item.kw.toLowerCase().includes(searchTxt) && !item.camp.toLowerCase().includes(searchTxt) && !item.grp.toLowerCase().includes(searchTxt)) {
+          return;
+        }
+
         const cExc = item.cost / 1.1;
         const ctr = item.imp > 0 ? item.clk / item.imp : 0;
         const cpc = item.clk > 0 ? cExc / item.clk : 0;
@@ -1122,16 +1086,18 @@ html_content = """<!DOCTYPE html>
         const tr = document.createElement('tr');
         tr.innerHTML = `
           <td class="center">${rank++}</td>
-          <td class="left">${item.kw}</td>
+          <td class="left" style="font-size: 11px; color: #555;">${item.camp}</td>
+          <td class="left" style="font-size: 11px; color: #555;">${item.grp}</td>
+          <td class="left" style="font-weight: 600;">${item.kw}</td>
           <td class="right">${fmtNum(item.imp)}</td>
           <td class="right">${fmtNum(item.clk)}</td>
           <td class="right">${fmtWon(cExc)}</td>
           <td class="right">${fmtWon(item.cost)}</td>
           <td class="center">${fmtPct(ctr)}</td>
           <td class="right">${fmtWon(cpc)}</td>
-          <td class="right">${fmtNum(item.lead)}</td>
+          <td class="right" style="font-weight: 700;">${fmtNum(item.lead)}</td>
           <td class="right">${fmtNum(item.eff)}</td>
-          <td class="right">${fmtNum(item.won)}</td>
+          <td class="right" style="font-weight: 700;">${fmtNum(item.won)}</td>
           <td class="right">${fmtWon(cpa)}</td>
           <td class="right">${fmtWon(cps)}</td>
           <td class="center">${fmtPct1(cvr)}</td>
@@ -1140,7 +1106,8 @@ html_content = """<!DOCTYPE html>
       });
     }
 
-    function renderMediaDrilldown(data) {
+    // Media Single Drilldown Table
+    function renderMediaDrilldown(mediaData) {
       const drillKw = document.getElementById('input-media-drilldown-kw').value.trim();
       const recent8Days = [
         "2026-09-24", "2026-09-25", "2026-09-26", "2026-09-27",
@@ -1152,9 +1119,9 @@ html_content = """<!DOCTYPE html>
 
       recent8Days.forEach(dStr => {
         let dImp = 0, dClk = 0, dCost = 0, dLead = 0, dEff = 0, dWon = 0;
-        data.forEach(r => {
-          if (r[0] === dStr && r[3] === CURRENT_MEDIA && r[4] === drillKw) {
-            dImp += r[5]; dClk += r[6]; dCost += r[7]; dLead += r[8]; dEff += r[10]; dWon += r[11];
+        mediaData.forEach(r => {
+          if (r[0] === dStr && r[6] === drillKw) {
+            dImp += r[7]; dClk += r[8]; dCost += r[9]; dLead += r[10]; dEff += r[12]; dWon += r[13];
           }
         });
         const dCostExc = dCost / 1.1;
@@ -1163,25 +1130,18 @@ html_content = """<!DOCTYPE html>
         const dCpa = dLead > 0 ? dCostExc / dLead : 0;
         const dCps = dWon > 0 ? dCostExc / dWon : 0;
 
-        const dateObj = new Date(dStr);
-        const dayNames = ['일', '월', '화', '수', '목', '금', '토'];
-        const dayName = dayNames[dateObj.getDay()];
-        const bizType = (dateObj.getDay() === 0 || dateObj.getDay() === 6) ? '주말' : '영업일';
-
         const tr = document.createElement('tr');
         tr.innerHTML = `
-          <td class="center">${dStr}</td>
-          <td class="center">${dayName}</td>
-          <td class="center">${bizType}</td>
+          <td class="center" style="font-weight: 600;">${dStr}</td>
           <td class="right">${fmtNum(dImp)}</td>
           <td class="right">${fmtNum(dClk)}</td>
           <td class="center">${fmtPct(dCtr)}</td>
           <td class="right">${fmtWon(dCpc)}</td>
           <td class="right">${fmtWon(dCostExc)}</td>
           <td class="right">${fmtWon(dCost)}</td>
-          <td class="right">${fmtNum(dLead)}</td>
+          <td class="right" style="font-weight: 700;">${fmtNum(dLead)}</td>
           <td class="right">${fmtNum(dEff)}</td>
-          <td class="right">${fmtNum(dWon)}</td>
+          <td class="right" style="font-weight: 700;">${fmtNum(dWon)}</td>
           <td class="right">${fmtWon(dCpa)}</td>
           <td class="right">${fmtWon(dCps)}</td>
         `;
@@ -1189,64 +1149,314 @@ html_content = """<!DOCTYPE html>
       });
     }
 
-    // Event Listeners Setup
+    // TAB 4: Daily Keyword
+    function renderDailyKwTab(data) {
+      const targetMedia = document.getElementById('select-daily-media').value;
+      const targetKw = document.getElementById('input-daily-kw').value.trim();
+
+      const filtered = data.filter(r => r[3] === targetMedia && r[6] === targetKw);
+
+      let tImp = 0, tClk = 0, tCost = 0, tLead = 0, tEff = 0, tWon = 0;
+      const dayMap = {};
+
+      filtered.forEach(r => {
+        const dt = r[0];
+        tImp += r[7]; tClk += r[8]; tCost += r[9]; tLead += r[10]; tEff += r[12]; tWon += r[13];
+        if (!dayMap[dt]) dayMap[dt] = { imp: 0, clk: 0, cost: 0, lead: 0, eff: 0, won: 0 };
+        dayMap[dt].imp += r[7];
+        dayMap[dt].clk += r[8];
+        dayMap[dt].cost += r[9];
+        dayMap[dt].lead += r[10];
+        dayMap[dt].eff += r[12];
+        dayMap[dt].won += r[13];
+      });
+
+      const costExc = tCost / 1.1;
+
+      document.getElementById('daily-kw-kpis').innerHTML = `
+        <div class="kpi-card"><div class="kpi-title">${targetKw} 총 노출수</div><div class="kpi-value">${fmtNum(tImp)}</div></div>
+        <div class="kpi-card"><div class="kpi-title">${targetKw} 총 클릭수</div><div class="kpi-value">${fmtNum(tClk)}</div></div>
+        <div class="kpi-card"><div class="kpi-title">${targetKw} 총 광고비(VAT-)</div><div class="kpi-value">${fmtWon(costExc)}</div></div>
+        <div class="kpi-card"><div class="kpi-title">${targetKw} 총 리드수</div><div class="kpi-value">${fmtNum(tLead)}</div></div>
+        <div class="kpi-card"><div class="kpi-title">${targetKw} 총 수임건수</div><div class="kpi-value">${fmtNum(tWon)}</div></div>
+        <div class="kpi-card"><div class="kpi-title">${targetKw} 평균 리드 CPA</div><div class="kpi-value">${fmtWon(tLead > 0 ? costExc / tLead : 0)}</div></div>
+      `;
+
+      // Calendar Days Table
+      const dates = [];
+      let cur = new Date(MIN_DATE);
+      const endD = new Date(MAX_DATE);
+      while (cur <= endD) {
+        dates.push(cur.toISOString().slice(0, 10));
+        cur.setDate(cur.getDate() + 1);
+      }
+
+      const tbody = document.querySelector('#table-daily-calendar tbody');
+      tbody.innerHTML = '';
+      const dayNames = ['일', '월', '화', '수', '목', '금', '토'];
+
+      dates.forEach(dStr => {
+        const item = dayMap[dStr] || { imp: 0, clk: 0, cost: 0, lead: 0, eff: 0, won: 0 };
+        const dt = new Date(dStr);
+        const dayOfWeek = dayNames[dt.getDay()] || '';
+        const cExc = item.cost / 1.1;
+        const ctr = item.imp > 0 ? item.clk / item.imp : 0;
+        const cpc = item.clk > 0 ? cExc / item.clk : 0;
+        const cpa = item.lead > 0 ? cExc / item.lead : 0;
+        const cps = item.won > 0 ? cExc / item.won : 0;
+
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+          <td class="center" style="font-weight: 600;">${dStr}</td>
+          <td class="center">${dayOfWeek}</td>
+          <td class="right">${fmtNum(item.imp)}</td>
+          <td class="right">${fmtNum(item.clk)}</td>
+          <td class="center">${fmtPct(ctr)}</td>
+          <td class="right">${fmtWon(cpc)}</td>
+          <td class="right">${fmtWon(cExc)}</td>
+          <td class="right">${fmtWon(item.cost)}</td>
+          <td class="right" style="font-weight: 700;">${fmtNum(item.lead)}</td>
+          <td class="right">${fmtNum(item.eff)}</td>
+          <td class="right" style="font-weight: 700;">${fmtNum(item.won)}</td>
+          <td class="right">${fmtWon(cpa)}</td>
+          <td class="right">${fmtWon(cps)}</td>
+        `;
+        tbody.appendChild(tr);
+      });
+    }
+
+    // TAB 5: Weekly Trend
+    function renderWeeklyTab(data) {
+      const weeks = [
+        "26_36주(09/07~09/13)", "26_37주(09/14~09/20)", 
+        "26_38주(09/21~09/27)", "26_39주(09/28~10/04)", "26_40주(10/05~10/11)"
+      ];
+
+      const tbody = document.querySelector('#table-weekly-trend tbody');
+      tbody.innerHTML = '';
+
+      let prevStats = null;
+      weeks.forEach((wStr, idx) => {
+        let wImp = 0, wClk = 0, wCost = 0, wLead = 0, wEff = 0, wWon = 0;
+        data.forEach(r => {
+          if (r[2] === wStr) {
+            wImp += r[7]; wClk += r[8]; wCost += r[9]; wLead += r[10]; wEff += r[12]; wWon += r[13];
+          }
+        });
+
+        const wCostExc = wCost / 1.1;
+        const ctr = wImp > 0 ? wClk / wImp : 0;
+        const cpc = wClk > 0 ? wCostExc / wClk : 0;
+        const cpa = wLead > 0 ? wCostExc / wLead : 0;
+        const cps = wWon > 0 ? wCostExc / wWon : 0;
+
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+          <td class="center" style="font-weight: 600;">${wStr}</td>
+          <td class="right">${fmtNum(wImp)}</td>
+          <td class="right">${fmtNum(wClk)}</td>
+          <td class="right">${fmtWon(cpc)}</td>
+          <td class="center">${fmtPct(ctr)}</td>
+          <td class="right">${fmtWon(wCostExc)}</td>
+          <td class="right">${fmtWon(wCost)}</td>
+          <td class="right" style="font-weight: 700;">${fmtNum(wLead)}</td>
+          <td class="right">${fmtWon(cpa)}</td>
+          <td class="right">${fmtNum(wEff)}</td>
+          <td class="right" style="font-weight: 700;">${fmtNum(wWon)}</td>
+          <td class="right">${fmtWon(cps)}</td>
+        `;
+        tbody.appendChild(tr);
+
+        // Calculate WoW Diff
+        if (prevStats && (wStr === "26_39주(09/28~10/04)" || idx === weeks.length - 1)) {
+          const wowTr = document.createElement('tr');
+          wowTr.className = 'wow-diff';
+          wowTr.innerHTML = `
+            <td class="center">전주 대비(WoW) 증감</td>
+            <td class="right">${fmtNum(wImp - prevStats.imp)}</td>
+            <td class="right">${fmtNum(wClk - prevStats.clk)}</td>
+            <td class="right">${fmtWon(cpc - prevStats.cpc)}</td>
+            <td class="center">${fmtPct(ctr - prevStats.ctr)}</td>
+            <td class="right">${fmtWon(wCostExc - prevStats.costExc)}</td>
+            <td class="right">${fmtWon(wCost - prevStats.cost)}</td>
+            <td class="right">${fmtNum(wLead - prevStats.lead)}</td>
+            <td class="right">${fmtWon(cpa - prevStats.cpa)}</td>
+            <td class="right">${fmtNum(wEff - prevStats.eff)}</td>
+            <td class="right">${fmtNum(wWon - prevStats.won)}</td>
+            <td class="right">${fmtWon(cps - prevStats.cps)}</td>
+          `;
+          tbody.appendChild(wowTr);
+        }
+
+        prevStats = { imp: wImp, clk: wClk, cost: wCost, costExc: wCostExc, cpc, ctr, lead: wLead, eff: wEff, won: wWon, cpa, cps };
+      });
+    }
+
+    // TAB 6: Monthly Trend
+    function renderMonthlyTab(data) {
+      const months = ["2026.09.", "2026.10."];
+      const tbody = document.querySelector('#table-monthly-trend tbody');
+      tbody.innerHTML = '';
+
+      months.forEach(mStr => {
+        let mImp = 0, mClk = 0, mCost = 0, mLead = 0, mEff = 0, mWon = 0, mRev = 0;
+        data.forEach(r => {
+          if (r[1] === mStr) {
+            mImp += r[7]; mClk += r[8]; mCost += r[9]; mLead += r[10]; mEff += r[12]; mWon += r[13]; mRev += r[14];
+          }
+        });
+        const mCostExc = mCost / 1.1;
+        const ctr = mImp > 0 ? mClk / mImp : 0;
+        const cpc = mClk > 0 ? mCostExc / mClk : 0;
+        const cpa = mLead > 0 ? mCostExc / mLead : 0;
+        const cps = mWon > 0 ? mCostExc / mWon : 0;
+
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+          <td class="center" style="font-weight: 600;">${mStr}</td>
+          <td class="right">${fmtNum(mImp)}</td>
+          <td class="right">${fmtNum(mClk)}</td>
+          <td class="right">${fmtWon(cpc)}</td>
+          <td class="center">${fmtPct(ctr)}</td>
+          <td class="right">${fmtWon(mCostExc)}</td>
+          <td class="right">${fmtWon(mCost)}</td>
+          <td class="right" style="font-weight: 700;">${fmtNum(mLead)}</td>
+          <td class="right">${fmtWon(cpa)}</td>
+          <td class="right">${fmtNum(mEff)}</td>
+          <td class="right" style="font-weight: 700;">${fmtNum(mWon)}</td>
+          <td class="right">${fmtWon(cps)}</td>
+          <td class="right">${fmtWon(mRev)}</td>
+        `;
+        tbody.appendChild(tr);
+      });
+    }
+
+    // Setup Table Sorting Engine (Ascending / Descending)
+    function setupTableSorting() {
+      document.querySelectorAll('table.data-table').forEach(table => {
+        table.querySelectorAll('th.sortable').forEach(th => {
+          th.addEventListener('click', () => {
+            const colIndex = parseInt(th.getAttribute('data-col'));
+            const tbody = table.querySelector('tbody');
+            const rows = Array.from(tbody.querySelectorAll('tr'));
+
+            // Exclude total-row, cat-header, wow-diff from sort
+            const sortableRows = rows.filter(r => 
+              !r.classList.contains('total-row') && 
+              !r.classList.contains('cat-header') && 
+              !r.classList.contains('wow-diff')
+            );
+            const otherRows = rows.filter(r => 
+              r.classList.contains('total-row') || 
+              r.classList.contains('cat-header') || 
+              r.classList.contains('wow-diff')
+            );
+
+            const isAsc = th.classList.contains('sort-asc');
+            table.querySelectorAll('th.sortable').forEach(h => {
+              h.classList.remove('sort-asc', 'sort-desc');
+              h.textContent = h.textContent.replace(' ▲', '').replace(' ▼', '');
+            });
+
+            const direction = isAsc ? -1 : 1;
+            th.classList.add(isAsc ? 'sort-desc' : 'sort-asc');
+            th.textContent += isAsc ? ' ▼' : ' ▲';
+
+            sortableRows.sort((a, b) => {
+              const aCell = a.children[colIndex];
+              const bCell = b.children[colIndex];
+              if (!aCell || !bCell) return 0;
+
+              let aText = aCell.textContent.trim().replace(/[₩,%\s]/g, '');
+              let bText = bCell.textContent.trim().replace(/[₩,%\s]/g, '');
+
+              const aNum = parseFloat(aText);
+              const bNum = parseFloat(bText);
+
+              if (!isNaN(aNum) && !isNaN(bNum)) {
+                return (aNum - bNum) * direction;
+              }
+              return aText.localeCompare(bText, 'ko') * direction;
+            });
+
+            // Re-append rows
+            sortableRows.forEach(r => tbody.appendChild(r));
+            otherRows.forEach(r => tbody.appendChild(r));
+          });
+        });
+      });
+    }
+
+    // Setup Event Listeners
     function setupEvents() {
-      // Tab Switching
+      // Main Tab Switching
       document.querySelectorAll('.tab-btn').forEach(btn => {
         btn.addEventListener('click', () => {
           document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
           document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
           btn.classList.add('active');
-          document.getElementById(btn.dataset.tab).classList.add('active');
+          document.getElementById(btn.getAttribute('data-tab')).classList.add('active');
         });
       });
 
-      // Media Subtab Switching
+      // Media Sub Tab Switching
       document.querySelectorAll('.sub-tab-btn').forEach(btn => {
         btn.addEventListener('click', () => {
           document.querySelectorAll('.sub-tab-btn').forEach(b => b.classList.remove('active'));
           btn.classList.add('active');
-          CURRENT_MEDIA = btn.dataset.media;
+          CURRENT_MEDIA = btn.getAttribute('data-media');
+          CURRENT_CAMPAIGN = 'ALL';
+          CURRENT_GROUP = 'ALL';
           renderMediaTab(getFilteredData());
         });
       });
 
-      // Date Range Filter
+      // Media Campaign & Group Filter
+      document.getElementById('select-media-campaign').addEventListener('change', e => {
+        CURRENT_CAMPAIGN = e.target.value;
+        renderMediaRankingTable(getFilteredData().filter(r => r[3] === CURRENT_MEDIA));
+      });
+      document.getElementById('select-media-group').addEventListener('change', e => {
+        CURRENT_GROUP = e.target.value;
+        renderMediaRankingTable(getFilteredData().filter(r => r[3] === CURRENT_MEDIA));
+      });
+      document.getElementById('search-media-kw').addEventListener('input', () => {
+        renderMediaRankingTable(getFilteredData().filter(r => r[3] === CURRENT_MEDIA));
+      });
+
+      // Media Single Drilldown Apply
+      document.getElementById('btn-apply-media-drilldown').addEventListener('click', () => {
+        renderMediaDrilldown(getFilteredData().filter(r => r[3] === CURRENT_MEDIA));
+      });
+
+      // Daily Kw Apply
+      document.getElementById('btn-apply-daily-kw').addEventListener('click', () => {
+        renderDailyKwTab(getFilteredData());
+      });
+
+      // Period Filter
       document.getElementById('filter-start-date').addEventListener('change', renderAll);
       document.getElementById('filter-end-date').addEventListener('change', renderAll);
 
+      // Quick Date Buttons
       document.querySelectorAll('.quick-date-btn').forEach(btn => {
         btn.addEventListener('click', () => {
-          const r = btn.dataset.range;
+          const r = btn.getAttribute('data-range');
           if (r === 'all') {
             document.getElementById('filter-start-date').value = MIN_DATE;
             document.getElementById('filter-end-date').value = MAX_DATE;
           } else if (r === 'week') {
             document.getElementById('filter-start-date').value = '2026-09-24';
-            document.getElementById('filter-end-date').value = '2026-10-01';
+            document.getElementById('filter-end-date').value = MAX_DATE;
           } else if (r === 'sep') {
             document.getElementById('filter-start-date').value = '2026-09-01';
             document.getElementById('filter-end-date').value = '2026-09-30';
           } else if (r === 'oct') {
             document.getElementById('filter-start-date').value = '2026-10-01';
-            document.getElementById('filter-end-date').value = '2026-10-01';
+            document.getElementById('filter-end-date').value = MAX_DATE;
           }
           renderAll();
         });
-      });
-
-      // Daily Drilldown Button
-      document.getElementById('btn-apply-daily-kw').addEventListener('click', () => {
-        renderDailyKwTab(getFilteredData());
-      });
-
-      // Media Drilldown Button
-      document.getElementById('btn-apply-media-drilldown').addEventListener('click', () => {
-        renderMediaDrilldown(getFilteredData());
-      });
-
-      document.getElementById('search-media-kw').addEventListener('input', () => {
-        renderMediaTab(getFilteredData());
       });
 
       // Modal Controls
@@ -1255,11 +1465,14 @@ html_content = """<!DOCTYPE html>
       document.getElementById('btn-close-modal').addEventListener('click', () => modal.style.display = 'none');
       document.getElementById('btn-cancel-modal').addEventListener('click', () => modal.style.display = 'none');
 
-      // Process Paste Textarea
+      // Export to Excel (Full Multi-Sheet Export)
+      document.getElementById('btn-export-excel').addEventListener('click', exportFullDashboardToExcel);
+
+      // Process Paste Button
       document.getElementById('btn-process-paste').addEventListener('click', () => {
         const text = document.getElementById('paste-textarea').value.trim();
         if (!text) {
-          alert('붙여넣을 텍스트 데이터가 없습니다.');
+          alert('붙여넣을 데이터 텍스트를 입력해주세요.');
           return;
         }
         parsePastedTSV(text);
@@ -1269,7 +1482,7 @@ html_content = """<!DOCTYPE html>
       // Reset Default Button
       document.getElementById('btn-reset-default').addEventListener('click', () => {
         if (confirm('기본 원천 데이터로 복원하시겠습니까?')) {
-          localStorage.removeItem('HEUM_CUSTOM_RAW');
+          localStorage.removeItem('HEUM_CUSTOM_RAW_V3');
           RAW_DATA = window.DEFAULT_RAW_DATA || [];
           calculateDateExtremes();
           renderAll();
@@ -1282,35 +1495,55 @@ html_content = """<!DOCTYPE html>
       const dropzone = document.getElementById('file-dropzone');
       const fileInput = document.getElementById('file-input');
       dropzone.addEventListener('click', () => fileInput.click());
-
       dropzone.addEventListener('dragover', e => { e.preventDefault(); dropzone.style.background = '#E5EEF8'; });
       dropzone.addEventListener('dragleave', e => { e.preventDefault(); dropzone.style.background = '#F8FAFD'; });
       dropzone.addEventListener('drop', e => {
         e.preventDefault();
         dropzone.style.background = '#F8FAFD';
-        if (e.dataTransfer.files && e.dataTransfer.files[0]) {
-          handleUploadedFile(e.dataTransfer.files[0]);
-        }
+        if (e.dataTransfer.files && e.dataTransfer.files[0]) handleUploadedFile(e.dataTransfer.files[0]);
       });
       fileInput.addEventListener('change', e => {
-        if (e.target.files && e.target.files[0]) {
-          handleUploadedFile(e.target.files[0]);
-        }
-      });
-
-      // Export JSON
-      document.getElementById('btn-export-data').addEventListener('click', () => {
-        const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(RAW_DATA));
-        const dlAnchor = document.createElement('a');
-        dlAnchor.setAttribute("href", dataStr);
-        dlAnchor.setAttribute("download", "heum_raw_export.json");
-        document.body.appendChild(dlAnchor);
-        dlAnchor.click();
-        dlAnchor.remove();
+        if (e.target.files && e.target.files[0]) handleUploadedFile(e.target.files[0]);
       });
     }
 
-    // Parsing Pasted TSV from Excel
+    // Export to Excel Multi-Sheet
+    function exportFullDashboardToExcel() {
+      const wb = XLSX.utils.book_new();
+
+      // 1. Overview Table
+      const tOverview = document.getElementById('table-overview-media');
+      const wsOverview = XLSX.utils.table_to_sheet(tOverview);
+      XLSX.utils.book_append_sheet(wb, wsOverview, "매체별_성과요약");
+
+      // 2. Brand Table
+      const tBrand = document.getElementById('table-brand-cat');
+      const wsBrand = XLSX.utils.table_to_sheet(tBrand);
+      XLSX.utils.book_append_sheet(wb, wsBrand, "브랜드_키워드분석");
+
+      // 3. Media Ranking Table
+      const tRanking = document.getElementById('table-media-ranking');
+      const wsRanking = XLSX.utils.table_to_sheet(tRanking);
+      XLSX.utils.book_append_sheet(wb, wsRanking, `${CURRENT_MEDIA}_상세랭킹`);
+
+      // 4. Media Weekly Table
+      const tWeekly = document.getElementById('table-media-weekly');
+      const wsWeekly = XLSX.utils.table_to_sheet(tWeekly);
+      XLSX.utils.book_append_sheet(wb, wsWeekly, `${CURRENT_MEDIA}_주차추이`);
+
+      // 5. Media Daily All Table
+      const tDailyAll = document.getElementById('table-media-daily-all');
+      const wsDailyAll = XLSX.utils.table_to_sheet(tDailyAll);
+      XLSX.utils.book_append_sheet(wb, wsDailyAll, `${CURRENT_MEDIA}_일별추이`);
+
+      const sDate = document.getElementById('filter-start-date').value;
+      const eDate = document.getElementById('filter-end-date').value;
+      const fileName = `혜움_마케팅대시보드리포트_${sDate}_${eDate}.xlsx`;
+
+      XLSX.writeFile(wb, fileName);
+    }
+
+    // Parsing Pasted TSV with Campaign, Group, Keyword/Creative
     function parsePastedTSV(tsv) {
       const lines = tsv.split(/\\r?\\n/);
       if (lines.length < 2) {
@@ -1320,9 +1553,7 @@ html_content = """<!DOCTYPE html>
 
       const parsedRows = [];
       let startIdx = 0;
-      // Check if header exists
-      const firstLine = lines[0];
-      if (firstLine.includes('일') || firstLine.includes('매체') || firstLine.includes('Date')) {
+      if (lines[0].includes('일') || lines[0].includes('매체') || lines[0].includes('Date')) {
         startIdx = 1;
       }
 
@@ -1332,16 +1563,15 @@ html_content = """<!DOCTYPE html>
         const cols = line.split('\\t');
         if (cols.length < 10) continue;
 
-        // If user copied entire row from 통합_raw:
-        // Col E: Date (index 4), Col C: Month (index 2), Col I: WeekCode (index 8), Col L: Media (index 11), Col AE: Keyword (index 30)
-        // Col Q: Imp (16), Col R: Clk (17), Col S: Cost (18), Col T: Lead (19), Col U: Lost (20), Col V: Eff (21), Col W: Won (22), Col X: Rev (23)
-        let dtStr, mStr, wcStr, medStr, kwStr, imp, clk, cost, lead, lost, eff, won, rev;
+        let dtStr, mStr, wcStr, medStr, campStr, grpStr, kwStr, imp, clk, cost, lead, lost, eff, won, rev;
 
         if (cols.length >= 30) {
           dtStr = cols[4] ? cols[4].trim().slice(0, 10) : '';
           mStr = cols[2] ? cols[2].trim() : '';
           wcStr = cols[8] ? cols[8].trim() : '';
           medStr = cols[11] ? cols[11].trim() : '';
+          campStr = cols[12] ? cols[12].trim() : '-';
+          grpStr = cols[13] ? cols[13].trim() : '-';
           kwStr = cols[30] ? cols[30].trim() : '-';
           imp = parseFloat(cols[16]) || 0;
           clk = parseFloat(cols[17]) || 0;
@@ -1352,38 +1582,37 @@ html_content = """<!DOCTYPE html>
           won = parseFloat(cols[22]) || 0;
           rev = parseFloat(cols[23]) || 0;
         } else {
-          // Minimal 13 columns fallback
           dtStr = cols[0].trim().slice(0, 10);
-          mStr = cols[1].trim();
-          wcStr = cols[2].trim();
-          medStr = cols[3].trim();
-          kwStr = cols[4].trim();
-          imp = parseFloat(cols[5]) || 0;
-          clk = parseFloat(cols[6]) || 0;
-          cost = parseFloat(cols[7]) || 0;
-          lead = parseFloat(cols[8]) || 0;
-          lost = parseFloat(cols[9]) || 0;
-          eff = parseFloat(cols[10]) || 0;
-          won = parseFloat(cols[11]) || 0;
-          rev = parseFloat(cols[12]) || 0;
+          mStr = cols[1] ? cols[1].trim() : '';
+          wcStr = cols[2] ? cols[2].trim() : '';
+          medStr = cols[3] ? cols[3].trim() : '';
+          campStr = cols[4] ? cols[4].trim() : '-';
+          grpStr = cols[5] ? cols[5].trim() : '-';
+          kwStr = cols[6] ? cols[6].trim() : '-';
+          imp = parseFloat(cols[7]) || 0;
+          clk = parseFloat(cols[8]) || 0;
+          cost = parseFloat(cols[9]) || 0;
+          lead = parseFloat(cols[10]) || 0;
+          lost = parseFloat(cols[11]) || 0;
+          eff = parseFloat(cols[12]) || 0;
+          won = parseFloat(cols[13]) || 0;
+          rev = parseFloat(cols[14]) || 0;
         }
 
         if (dtStr) {
-          parsedRows.push([dtStr, mStr, wcStr, medStr, kwStr, imp, clk, cost, lead, lost, eff, won, rev]);
+          parsedRows.push([dtStr, mStr, wcStr, medStr, campStr, grpStr, kwStr, imp, clk, cost, lead, lost, eff, won, rev]);
         }
       }
 
       if (parsedRows.length === 0) {
-        alert('데이터 형식을 파싱할 수 없습니다. 컬럼 구성을 확인해주세요.');
+        alert('데이터 형식을 파싱할 수 없습니다.');
         return;
       }
 
       RAW_DATA = parsedRows;
       try {
-        localStorage.setItem('HEUM_CUSTOM_RAW', JSON.stringify(RAW_DATA));
-      } catch (e) {
-        console.warn('LocalStorage limit exceeded');
-      }
+        localStorage.setItem('HEUM_CUSTOM_RAW_V3', JSON.stringify(RAW_DATA));
+      } catch (e) {}
 
       calculateDateExtremes();
       renderAll();
@@ -1412,18 +1641,15 @@ html_content = """<!DOCTYPE html>
           if (!cols || cols.length < 10) continue;
           
           let dtStr = cols[4];
-          if (dtStr instanceof Date) {
-            dtStr = dtStr.toISOString().slice(0, 10);
-          } else if (typeof dtStr === 'number') {
-            const d = new Date((dtStr - (25567 + 2)) * 86400 * 1000);
-            dtStr = d.toISOString().slice(0, 10);
-          } else {
-            dtStr = String(dtStr || '').slice(0, 10);
-          }
+          if (dtStr instanceof Date) dtStr = dtStr.toISOString().slice(0, 10);
+          else if (typeof dtStr === 'number') dtStr = new Date((dtStr - (25567 + 2)) * 86400 * 1000).toISOString().slice(0, 10);
+          else dtStr = String(dtStr || '').slice(0, 10);
 
           const mStr = String(cols[2] || '');
           const wcStr = String(cols[8] || '');
           const medStr = String(cols[11] || '');
+          const campStr = String(cols[12] || '-');
+          const grpStr = String(cols[13] || '-');
           const kwStr = String(cols[30] || '-');
           const imp = parseFloat(cols[16]) || 0;
           const clk = parseFloat(cols[17]) || 0;
@@ -1435,14 +1661,14 @@ html_content = """<!DOCTYPE html>
           const rev = parseFloat(cols[23]) || 0;
 
           if (dtStr) {
-            parsedRows.push([dtStr, mStr, wcStr, medStr, kwStr, imp, clk, cost, lead, lost, eff, won, rev]);
+            parsedRows.push([dtStr, mStr, wcStr, medStr, campStr, grpStr, kwStr, imp, clk, cost, lead, lost, eff, won, rev]);
           }
         }
 
         if (parsedRows.length > 0) {
           RAW_DATA = parsedRows;
           try {
-            localStorage.setItem('HEUM_CUSTOM_RAW', JSON.stringify(RAW_DATA));
+            localStorage.setItem('HEUM_CUSTOM_RAW_V3', JSON.stringify(RAW_DATA));
           } catch(err) {}
           calculateDateExtremes();
           renderAll();
@@ -1460,4 +1686,4 @@ html_content = """<!DOCTYPE html>
 with open('index.html', 'w', encoding='utf-8') as f:
     f.write(html_content)
 
-print(f"SUCCESS! index.html has been generated. Size: {len(html_content)} bytes.")
+print(f"SUCCESS! index.html has been upgraded to v3. Size: {len(html_content)} bytes.")
