@@ -1,0 +1,16 @@
+# OS & Temp files
+~$*
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+DFE1F200
+*.tmp
+
+# Python cache
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Large binary local raw backups (optional)
+# *.xlsb
