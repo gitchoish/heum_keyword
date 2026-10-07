@@ -161,6 +161,14 @@
       </div>
     </div>
     <div class="control-group">
+      <span class="control-label">디바이스 구분:</span>
+      <select id="filter-device" class="date-input">
+        <option value="ALL">전체 디바이스</option>
+        <option value="PC">PC</option>
+        <option value="모바일">모바일 (MO)</option>
+      </select>
+    </div>
+    <div class="control-group">
       <span class="raw-info-tag" id="raw-info-text">원천 데이터 로딩 중...</span>
     </div>
   </div>
@@ -257,8 +265,15 @@
 
       <div class="kpi-grid" id="media-kpis"></div>
 
-      <!-- 매체별 상단 필터: 캠페인 / 그룹 필터링 -->
+      <!-- 매체별 상단 필터: 디바이스 / 캠페인 / 그룹 필터링 -->
       <div class="drilldown-box">
+        <label>디바이스:</label>
+        <select id="select-media-device">
+          <option value="ALL">전체 디바이스</option>
+          <option value="PC">PC</option>
+          <option value="모바일">모바일 (MO)</option>
+        </select>
+
         <label>캠페인 필터:</label>
         <select id="select-media-campaign">
           <option value="ALL">전체 캠페인</option>
@@ -345,21 +360,23 @@
             <thead>
               <tr>
                 <th class="sortable" data-col="0">순위</th>
-                <th class="sortable" data-col="1">캠페인</th>
-                <th class="sortable" data-col="2">그룹</th>
-                <th class="sortable" data-col="3">키워드 / 소재명</th>
-                <th class="sortable" data-col="4">노출수</th>
-                <th class="sortable" data-col="5">클릭수</th>
-                <th class="sortable" data-col="6">비용(vat-)</th>
-                <th class="sortable" data-col="7">비용(vat+)</th>
-                <th class="sortable" data-col="8">CTR</th>
-                <th class="sortable" data-col="9">CPC</th>
-                <th class="sortable" data-col="10">총 리드</th>
-                <th class="sortable" data-col="11">유효 리드</th>
-                <th class="sortable" data-col="12">수임</th>
-                <th class="sortable" data-col="13">리드 CPA</th>
-                <th class="sortable" data-col="14">수임 CPA</th>
-                <th class="sortable" data-col="15">전환율</th>
+                <th class="sortable" data-col="1">디바이스</th>
+                <th class="sortable" data-col="2">캠페인</th>
+                <th class="sortable" data-col="3">그룹</th>
+                <th class="sortable" data-col="4">키워드 / 소재명</th>
+                <th class="sortable" data-col="5">평균 노출 순위</th>
+                <th class="sortable" data-col="6">노출수</th>
+                <th class="sortable" data-col="7">클릭수</th>
+                <th class="sortable" data-col="8">비용(vat-)</th>
+                <th class="sortable" data-col="9">비용(vat+)</th>
+                <th class="sortable" data-col="10">CTR</th>
+                <th class="sortable" data-col="11">CPC</th>
+                <th class="sortable" data-col="12">총 리드</th>
+                <th class="sortable" data-col="13">유효 리드</th>
+                <th class="sortable" data-col="14">수임</th>
+                <th class="sortable" data-col="15">리드 CPA</th>
+                <th class="sortable" data-col="16">수임 CPA</th>
+                <th class="sortable" data-col="17">전환율</th>
               </tr>
             </thead>
             <tbody></tbody>
@@ -571,7 +588,7 @@
     });
 
     function loadInitialData() {
-      const savedData = localStorage.getItem('HEUM_CUSTOM_RAW_V3');
+      const savedData = localStorage.getItem('HEUM_CUSTOM_RAW_V4');
       if (savedData) {
         try {
           RAW_DATA = JSON.parse(savedData);
@@ -609,8 +626,17 @@
     function getFilteredData() {
       const s = document.getElementById('filter-start-date').value;
       const e = document.getElementById('filter-end-date').value;
-      if (!s || !e) return RAW_DATA;
-      return RAW_DATA.filter(row => row[0] >= s && row[0] <= e);
+      const devEl = document.getElementById('filter-device');
+      const dev = devEl ? devEl.value : 'ALL';
+
+      let filtered = RAW_DATA;
+      if (s && e) {
+        filtered = filtered.filter(row => row[0] >= s && row[0] <= e);
+      }
+      if (dev && dev !== 'ALL') {
+        filtered = filtered.filter(row => row[15] === dev);
+      }
+      return filtered;
     }
 
     function renderAll() {
@@ -899,24 +925,41 @@
 
     function updateCampaignGroupDropdowns(mediaData) {
       const campSelect = document.getElementById('select-media-campaign');
-      const grpSelect = document.getElementById('select-media-group');
-
       const campaigns = Array.from(new Set(mediaData.map(r => r[4]).filter(c => c && c !== '-'))).sort();
-      const groups = Array.from(new Set(mediaData.map(r => r[5]).filter(g => g && g !== '-'))).sort();
-
       const prevCamp = campSelect.value;
-      const prevGrp = grpSelect.value;
 
       campSelect.innerHTML = '<option value="ALL">전체 캠페인</option>' + 
         campaigns.map(c => `<option value="${c}">${c}</option>`).join('');
+
+      if (campaigns.includes(prevCamp)) campSelect.value = prevCamp;
+      else {
+        campSelect.value = 'ALL';
+        CURRENT_CAMPAIGN = 'ALL';
+      }
+
+      updateGroupDropdown(mediaData);
+    }
+
+    function updateGroupDropdown(mediaData) {
+      const campSelect = document.getElementById('select-media-campaign');
+      const grpSelect = document.getElementById('select-media-group');
+      const selectedCamp = campSelect ? campSelect.value : 'ALL';
+
+      let targetData = mediaData;
+      if (selectedCamp !== 'ALL') {
+        targetData = targetData.filter(r => r[4] === selectedCamp);
+      }
+      const groups = Array.from(new Set(targetData.map(r => r[5]).filter(g => g && g !== '-'))).sort();
+      const prevGrp = grpSelect.value;
+
       grpSelect.innerHTML = '<option value="ALL">전체 그룹</option>' + 
         groups.map(g => `<option value="${g}">${g}</option>`).join('');
 
-      if (campaigns.includes(prevCamp)) campSelect.value = prevCamp;
-      else CURRENT_CAMPAIGN = 'ALL';
-
       if (groups.includes(prevGrp)) grpSelect.value = prevGrp;
-      else CURRENT_GROUP = 'ALL';
+      else {
+        grpSelect.value = 'ALL';
+        CURRENT_GROUP = 'ALL';
+      }
     }
 
     // Media Weekly Table
@@ -1014,28 +1057,31 @@
       });
     }
 
-    // Media Ranking Table (with Campaign & Group & Keyword/Creative)
+    // Media Ranking Table (with Campaign & Group & Keyword/Creative & Device & Avg Rank)
     function renderMediaRankingTable(mediaData) {
+      const devFilter = document.getElementById('select-media-device') ? document.getElementById('select-media-device').value : 'ALL';
       const campFilter = document.getElementById('select-media-campaign').value;
       const grpFilter = document.getElementById('select-media-group').value;
       const searchTxt = (document.getElementById('search-media-kw').value || '').toLowerCase();
 
-      // Filter by Campaign / Group
+      // Filter by Device / Campaign / Group
       let filtered = mediaData;
+      if (devFilter !== 'ALL') filtered = filtered.filter(r => r[15] === devFilter);
       if (campFilter !== 'ALL') filtered = filtered.filter(r => r[4] === campFilter);
       if (grpFilter !== 'ALL') filtered = filtered.filter(r => r[5] === grpFilter);
 
-      // Aggregate by [Campaign, Group, Keyword/Creative]
+      // Aggregate by [Campaign, Group, Keyword/Creative, Device]
       const aggMap = {};
       filtered.forEach(r => {
         const camp = r[4] || '-';
         const grp = r[5] || '-';
         const kw = r[6] || '-';
+        const dev = r[15] || '-';
         if (kw === '-' && r[7] === 0 && r[8] === 0 && r[9] === 0 && r[10] === 0) return;
 
-        const key = `${camp}__${grp}__${kw}`;
+        const key = `${camp}__${grp}__${kw}__${dev}`;
         if (!aggMap[key]) {
-          aggMap[key] = { camp, grp, kw, imp: 0, clk: 0, cost: 0, lead: 0, eff: 0, won: 0 };
+          aggMap[key] = { dev, camp, grp, kw, imp: 0, clk: 0, cost: 0, lead: 0, eff: 0, won: 0, rankImp: 0 };
         }
         aggMap[key].imp += r[7];
         aggMap[key].clk += r[8];
@@ -1043,6 +1089,7 @@
         aggMap[key].lead += r[10];
         aggMap[key].eff += r[12];
         aggMap[key].won += r[13];
+        aggMap[key].rankImp += (r[16] || 0) * r[7];
       });
 
       const list = Object.values(aggMap).sort((a, b) => (b.won - a.won) || (b.lead - a.lead) || (b.cost - a.cost));
@@ -1051,7 +1098,7 @@
       tbody.innerHTML = '';
 
       let rank = 1;
-      list.slice(0, 200).forEach(item => {
+      list.slice(0, 300).forEach(item => {
         if (searchTxt && !item.kw.toLowerCase().includes(searchTxt) && !item.camp.toLowerCase().includes(searchTxt) && !item.grp.toLowerCase().includes(searchTxt)) {
           return;
         }
@@ -1062,13 +1109,16 @@
         const cpa = item.lead > 0 ? cExc / item.lead : 0;
         const cps = item.won > 0 ? cExc / item.won : 0;
         const cvr = item.clk > 0 ? item.lead / item.clk : 0;
+        const avgRank = (item.imp > 0 && item.rankImp > 0) ? (item.rankImp / item.imp).toFixed(1) : '-';
 
         const tr = document.createElement('tr');
         tr.innerHTML = `
           <td class="center">${rank++}</td>
+          <td class="center" style="font-weight: 600; color: #1F4E79;">${item.dev}</td>
           <td class="left" style="font-size: 11px; color: #555;">${item.camp}</td>
           <td class="left" style="font-size: 11px; color: #555;">${item.grp}</td>
           <td class="left" style="font-weight: 600;">${item.kw}</td>
+          <td class="center" style="font-weight: 700; color: #2F5597;">${avgRank}</td>
           <td class="right">${fmtNum(item.imp)}</td>
           <td class="right">${fmtNum(item.clk)}</td>
           <td class="right">${fmtWon(cExc)}</td>
@@ -1391,9 +1441,15 @@
         });
       });
 
+      // Media Device Filter
+      document.getElementById('select-media-device').addEventListener('change', () => {
+        renderMediaRankingTable(getFilteredData().filter(r => r[3] === CURRENT_MEDIA));
+      });
+
       // Media Campaign & Group Filter
       document.getElementById('select-media-campaign').addEventListener('change', e => {
         CURRENT_CAMPAIGN = e.target.value;
+        updateGroupDropdown(getFilteredData().filter(r => r[3] === CURRENT_MEDIA));
         renderMediaRankingTable(getFilteredData().filter(r => r[3] === CURRENT_MEDIA));
       });
       document.getElementById('select-media-group').addEventListener('change', e => {
@@ -1414,9 +1470,10 @@
         renderDailyKwTab(getFilteredData());
       });
 
-      // Period Filter
+      // Period & Device Filter
       document.getElementById('filter-start-date').addEventListener('change', renderAll);
       document.getElementById('filter-end-date').addEventListener('change', renderAll);
+      document.getElementById('filter-device').addEventListener('change', renderAll);
 
       // Quick Date Buttons
       document.querySelectorAll('.quick-date-btn').forEach(btn => {
@@ -1462,7 +1519,7 @@
       // Reset Default Button
       document.getElementById('btn-reset-default').addEventListener('click', () => {
         if (confirm('기본 원천 데이터로 복원하시겠습니까?')) {
-          localStorage.removeItem('HEUM_CUSTOM_RAW_V3');
+          localStorage.removeItem('HEUM_CUSTOM_RAW_V4');
           RAW_DATA = window.DEFAULT_RAW_DATA || [];
           calculateDateExtremes();
           renderAll();
@@ -1580,7 +1637,7 @@
         }
 
         if (dtStr) {
-          parsedRows.push([dtStr, mStr, wcStr, medStr, campStr, grpStr, kwStr, imp, clk, cost, lead, lost, eff, won, rev]);
+          parsedRows.push([dtStr, mStr, wcStr, medStr, campStr, grpStr, kwStr, imp, clk, cost, lead, lost, eff, won, rev, 'ALL', 0]);
         }
       }
 
@@ -1591,7 +1648,7 @@
 
       RAW_DATA = parsedRows;
       try {
-        localStorage.setItem('HEUM_CUSTOM_RAW_V3', JSON.stringify(RAW_DATA));
+        localStorage.setItem('HEUM_CUSTOM_RAW_V4', JSON.stringify(RAW_DATA));
       } catch (e) {}
 
       calculateDateExtremes();
@@ -1641,14 +1698,14 @@
           const rev = parseFloat(cols[23]) || 0;
 
           if (dtStr) {
-            parsedRows.push([dtStr, mStr, wcStr, medStr, campStr, grpStr, kwStr, imp, clk, cost, lead, lost, eff, won, rev]);
+            parsedRows.push([dtStr, mStr, wcStr, medStr, campStr, grpStr, kwStr, imp, clk, cost, lead, lost, eff, won, rev, 'ALL', 0]);
           }
         }
 
         if (parsedRows.length > 0) {
           RAW_DATA = parsedRows;
           try {
-            localStorage.setItem('HEUM_CUSTOM_RAW_V3', JSON.stringify(RAW_DATA));
+            localStorage.setItem('HEUM_CUSTOM_RAW_V4', JSON.stringify(RAW_DATA));
           } catch(err) {}
           calculateDateExtremes();
           renderAll();
